@@ -1,0 +1,112 @@
+[2026-03-23 15:56:04] launch_app.py start
+[2026-03-23 15:56:05] launch_app.py fatal error
+Traceback (most recent call last):
+  File "C:\Users\JUNG\Desktop\plant-excel-app\launch_app.py", line 22, in <module>
+    runpy.run_path(str(BASE_DIR / "start_app.py"), run_name="__main__")
+  File "<frozen runpy>", line 286, in run_path
+  File "<frozen runpy>", line 98, in _run_module_code
+  File "<frozen runpy>", line 88, in _run_code
+  File "C:\Users\JUNG\Desktop\plant-excel-app\start_app.py", line 10, in <module>
+    import uvicorn
+ModuleNotFoundError: No module named 'uvicorn'
+
+[2026-03-23 15:56:11] launch_app.py start
+[2026-03-23 15:56:11] launch_app.py fatal error
+Traceback (most recent call last):
+  File "C:\Users\JUNG\Desktop\plant-excel-app\launch_app.py", line 22, in <module>
+    runpy.run_path(str(BASE_DIR / "start_app.py"), run_name="__main__")
+  File "<frozen runpy>", line 286, in run_path
+  File "<frozen runpy>", line 98, in _run_module_code
+  File "<frozen runpy>", line 88, in _run_code
+  File "C:\Users\JUNG\Desktop\plant-excel-app\start_app.py", line 10, in <module>
+    import uvicorn
+ModuleNotFoundError: No module named 'uvicorn'
+
+[2026-03-23 16:04:35] launch_app.py start
+[2026-03-23 16:04:35] launch_app.py fatal error
+Traceback (most recent call last):
+  File "C:\Users\JUNG\Desktop\plant-excel-app\launch_app.py", line 22, in <module>
+    runpy.run_path(str(BASE_DIR / "start_app.py"), run_name="__main__")
+  File "<frozen runpy>", line 286, in run_path
+  File "<frozen runpy>", line 98, in _run_module_code
+  File "<frozen runpy>", line 88, in _run_code
+  File "C:\Users\JUNG\Desktop\plant-excel-app\start_app.py", line 10, in <module>
+    import uvicorn
+ModuleNotFoundError: No module named 'uvicorn'
+
+[2026-03-23 16:12:33] launch_app.py start
+[2026-03-23 16:12:36] process start
+[2026-03-23 16:12:36] launcher init start
+[2026-03-23 16:12:36] launcher init complete
+[2026-03-23 16:12:37] start_server called
+[2026-03-23 16:12:37] server thread start
+[2026-03-23 16:12:37] finish_startup check
+[2026-03-23 16:12:58] server start failed
+[2026-03-23 16:13:42] launcher closing
+[2026-03-23 16:13:42] process end
+[2026-03-23 16:13:51] launch_app.py start
+[2026-03-23 16:13:52] process start
+[2026-03-23 16:13:52] launcher init start
+[2026-03-23 16:13:52] launcher init complete
+[2026-03-23 16:13:52] start_server called
+[2026-03-23 16:13:52] server thread start
+[2026-03-23 16:13:52] finish_startup check
+[2026-03-23 16:14:13] server start failed
+[2026-03-23 16:14:18] open_browser called before server ready
+[2026-03-23 16:14:43] open_browser called before server ready
+[2026-03-23 16:15:07] open_browser called before server ready
+[2026-03-23 16:15:27] launcher closing
+[2026-03-23 16:15:28] process end
+[2026-03-23 16:15:38] launch_app.py start
+[2026-03-23 16:15:38] process start
+[2026-03-23 16:15:38] launcher init start
+[2026-03-23 16:15:38] launcher init complete
+[2026-03-23 16:15:39] start_server called
+[2026-03-23 16:15:39] server thread start
+[2026-03-23 16:15:39] finish_startup check
+[2026-03-23 16:16:00] server start failed
+[2026-03-23 17:11:44] launcher closing
+[2026-03-23 17:11:45] process end
+[2026-03-23 17:11:56] launch_app.py start
+[2026-03-23 17:11:56] process start
+[2026-03-23 17:11:56] launcher init start
+[2026-03-23 17:11:57] launcher init complete
+[2026-03-23 17:11:57] start_server called
+[2026-03-23 17:11:57] server process started pid=15856
+[2026-03-23 17:11:58] finish_startup check
+[2026-03-23 17:12:58] server start failed
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://127.0.0.1:8000 (Press CTRL+C to quit)
+[2026-03-23 17:12:42,384] [   ERROR] base_events.py:1785 - Accept failed on a socket
+socket: <asyncio.TransportSocket fd=884, family=2, type=1, proto=6, laddr=('127.0.0.1', 8000)>
+Traceback (most recent call last):
+  File "C:\Users\JUNG\AppData\Local\Programs\Python\Python312\Lib\asyncio\proactor_events.py", line 844, in loop
+    conn, addr = f.result()
+                 ^^^^^^^^^^
+  File "C:\Users\JUNG\AppData\Local\Programs\Python\Python312\Lib\asyncio\windows_events.py", line 798, in _poll
+    value = callback(transferred, key, ov)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\JUNG\AppData\Local\Programs\Python\Python312\Lib\asyncio\windows_events.py", line 550, in finish_accept
+    ov.getresult()
+OSError: [WinError 64]  Ʈũ ̸  ̻   ϴ
+[2026-03-23 17:12:42,396] [   ERROR] base_events.py:1785 - Task exception was never retrieved
+future: <Task finished name='Task-4' coro=<IocpProactor.accept.<locals>.accept_coro() done, defined at C:\Users\JUNG\AppData\Local\Programs\Python\Python312\Lib\asyncio\windows_events.py:558> exception=OSError(22, ' Ʈũ ̸  ̻   ϴ', None, 64, None)>
+Traceback (most recent call last):
+  File "C:\Users\JUNG\AppData\Local\Programs\Python\Python312\Lib\asyncio\windows_events.py", line 561, in accept_coro
+    await future
+OSError: [WinError 64]  Ʈũ ̸  ̻   ϴ
+[2026-03-23 17:15:27] launcher closing
+[2026-03-23 17:15:27] terminating server process
+[2026-03-23 17:15:28] process end
+[2026-03-23 17:15:30] launch_app.py start
+[2026-03-23 17:15:30] process start
+[2026-03-23 17:15:30] launcher init start
+[2026-03-23 17:15:30] launcher init complete
+[2026-03-23 17:15:31] start_server called
+[2026-03-23 17:15:31] server process started pid=9852
+[2026-03-23 17:15:31] finish_startup check
+[2026-03-23 17:15:47] server ready
+[2026-03-23 17:15:47] browser open
+[2026-03-23 17:18:15] launcher closing
+[2026-03-23 17:18:15] terminating server process
+[2026-03-23 17:18:16] process end

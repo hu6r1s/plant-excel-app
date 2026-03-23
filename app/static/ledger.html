@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>매입장 목록</title>
+    <link rel="stylesheet" href="/static/styles.css" />
+  </head>
+  <body>
+    <div class="page-shell">
+      <header class="hero">
+        <div class="hero-copy">
+          <p class="eyebrow">Purchase Ledger</p>
+          <h1>저장된 매입장 목록</h1>
+          <p class="hero-text">입력 화면에서 저장한 매입장 데이터를 날짜순으로 확인합니다.</p>
+        </div>
+        <div class="hero-panel">
+          <div class="action-card">
+            <p class="section-kicker">Move</p>
+            <h2>화면 이동</h2>
+            <div class="inline-actions stretch">
+              <a class="btn" href="/">입력 화면으로</a>
+              <button id="refresh-ledger-btn" class="btn primary" type="button">
+                <span id="refresh-ledger-label">새로고침</span>
+                <span id="refresh-ledger-spinner" class="spinner hidden" aria-hidden="true"></span>
+              </button>
+            </div>
+            <p id="ledger-feedback" class="feedback"></p>
+          </div>
+        </div>
+      </header>
+
+      <main>
+        <section class="panel">
+          <div class="panel-header compact">
+            <div>
+              <p class="section-kicker">Filter</p>
+              <h2>조회 조건</h2>
+            </div>
+          </div>
+          <div class="filter-grid">
+            <label class="field-block">
+              <span>식물 이름</span>
+              <input id="ledger-name" type="text" placeholder="이름 일부로 바로 검색" />
+            </label>
+            <label class="field-block">
+              <span>정렬</span>
+              <select id="ledger-sort">
+                <option value="date">저장날짜</option>
+                <option value="id">ID</option>
+                <option value="name">이름(가나다)</option>
+              </select>
+            </label>
+            <label class="field-block">
+              <span>정렬 방향</span>
+              <select id="ledger-direction">
+                <option value="desc">내림차순</option>
+                <option value="asc">오름차순</option>
+              </select>
+            </label>
+          </div>
+          <div class="inline-actions">
+            <button id="clear-ledger-filter-btn" class="btn" type="button">필터 초기화</button>
+            <button id="export-ledger-btn" class="btn" type="button">
+              <span id="export-ledger-label">엑셀로 내보내기</span>
+              <span id="export-ledger-spinner" class="spinner hidden" aria-hidden="true"></span>
+            </button>
+          </div>
+        </section>
+        <section class="panel panel-wide">
+          <div class="panel-header">
+            <div>
+              <p class="section-kicker">Ledger</p>
+              <h2>저장 내역</h2>
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table class="entry-table">
+              <thead>
+                <tr>
+                  <th>ID</th>
+                  <th>저장날짜</th>
+                  <th>식물 이름</th>
+                  <th>규격</th>
+                  <th>수량</th>
+                  <th>단가</th>
+                  <th>도매가</th>
+                  <th>소매가</th>
+                </tr>
+              </thead>
+              <tbody id="ledger-body"></tbody>
+            </table>
+          </div>
+        </section>
+      </main>
+    </div>
+    <script src="/static/ledger.js"></script>
+  </body>
+</html>
