@@ -2,7 +2,7 @@ from io import BytesIO
 from pathlib import Path
 import re
 import sqlite3
-from typing import Any
+from typing import Any, TYPE_CHECKING
 
 from fastapi import FastAPI, UploadFile
 from fastapi.responses import FileResponse, JSONResponse, Response
@@ -10,9 +10,11 @@ from fastapi.staticfiles import StaticFiles
 from openpyxl import Workbook
 from openpyxl.styles import Font
 import numpy as np
-from paddleocr import PaddleOCR
 from PIL import Image, ImageFilter, ImageOps, UnidentifiedImageError
 from pydantic import BaseModel
+
+if TYPE_CHECKING:
+    from paddleocr import PaddleOCR
 
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -37,12 +39,14 @@ NUMERIC_WITH_COMMAS = re.compile(r"^\d{1,3}(,\d{3})+$")
 NUMERIC_PLAIN_MONEY = re.compile(r"^\d{4,7}$")
 PURE_NUMBER = re.compile(r"^\d+$")
 SPEC_TOKEN = re.compile(r"^\d+(?:/\d+)?$")
-OCR_ENGINE: PaddleOCR | None = None
+OCR_ENGINE: Any | None = None
 
 
-def get_ocr_engine() -> PaddleOCR:
+def get_ocr_engine() -> "PaddleOCR":
     global OCR_ENGINE
     if OCR_ENGINE is None:
+        from paddleocr import PaddleOCR
+
         OCR_ENGINE = PaddleOCR(
             use_angle_cls=True,
             lang="korean",

@@ -1,3 +1,4 @@
+import asyncio
 import socket
 import subprocess
 import sys
@@ -9,13 +10,20 @@ from pathlib import Path
 from tkinter import messagebox
 
 
-BASE_DIR = Path(__file__).resolve().parent
-LOG_PATH = BASE_DIR / "launcher.log"
-SERVER_LOG_PATH = BASE_DIR / "server.log"
 HOST = "127.0.0.1"
 PORT = 8000
 URL = f"http://{HOST}:{PORT}"
 STARTUP_TIMEOUT_SECONDS = 60.0
+
+if getattr(sys, "frozen", False):
+    APP_DIR = Path(sys.executable).resolve().parent
+    RESOURCE_DIR = Path(getattr(sys, "_MEIPASS", APP_DIR))
+else:
+    APP_DIR = Path(__file__).resolve().parent
+    RESOURCE_DIR = APP_DIR
+
+LOG_PATH = APP_DIR / "launcher.log"
+SERVER_LOG_PATH = APP_DIR / "server.log"
 
 
 def write_log(message: str) -> None:
@@ -24,12 +32,24 @@ def write_log(message: str) -> None:
         log_file.write(f"[{timestamp}] {message}\n")
 
 
-def get_python_executable() -> str:
-    current = Path(sys.executable)
-    sibling = current.with_name("python.exe")
-    if sibling.exists():
-        return str(sibling)
-    return str(current)
+def run_server_mode() -> None:
+    if sys.platform.startswith("win"):
+        asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+
+    from uvicorn import Config, Server
+    from app.main import app as fastapi_app
+
+    write_log("server mode start")
+    config = Config(
+        fastapi_app,
+        host=HOST,
+        port=PORT,
+        reload=False,
+        log_level="info",
+    )
+    server = Server(config)
+    server.run()
+    write_log("server mode end")
 
 
 class PlantLabelLauncher:
@@ -135,7 +155,9 @@ class PlantLabelLauncher:
             if self.server_process and self.server_process.poll() is not None:
                 write_log(f"server process exited early with code {self.server_process.returncode}")
                 return False
-            if self.server_log_indicates_ready() or self.is_server_up():
+            if self.server_log_indicates_ready():
+                return True
+            if self.is_server_up():
                 return True
             time.sleep(0.3)
         return False
@@ -150,16 +172,15 @@ class PlantLabelLauncher:
         tail = lines[-20:]
         return "\n".join(tail) if tail else "server.log is empty"
 
-    def start_server(self) -> None:
-        if self.server_process and self.server_process.poll() is None:
-            return
+    def build_server_command(self) -> list[str]:
+        if getattr(sys, "frozen", False):
+            return [str(Path(sys.executable).resolve()), "--serve"]
 
-        write_log("start_server called")
-        self.status_var.set("프로그램을 시작하고 있습니다. 처음 실행은 1분 정도 걸릴 수 있습니다.")
-
-        python_executable = get_python_executable()
-        command = [
-            python_executable,
+        current = Path(sys.executable)
+        sibling_python = current.with_name("python.exe")
+        python_executable = sibling_python if sibling_python.exists() else current
+        return [
+            str(python_executable),
             "-m",
             "uvicorn",
             "app.main:app",
@@ -168,6 +189,15 @@ class PlantLabelLauncher:
             "--port",
             str(PORT),
         ]
+
+    def start_server(self) -> None:
+        if self.server_process and self.server_process.poll() is None:
+            return
+
+        write_log("start_server called")
+        self.status_var.set("프로그램을 시작하고 있습니다. 처음 실행은 1분 정도 걸릴 수 있습니다.")
+
+        command = self.build_server_command()
 
         self.server_log_offset = SERVER_LOG_PATH.stat().st_size if SERVER_LOG_PATH.exists() else 0
         self.server_log_handle = SERVER_LOG_PATH.open("a", encoding="utf-8")
@@ -178,7 +208,7 @@ class PlantLabelLauncher:
         try:
             self.server_process = subprocess.Popen(
                 command,
-                cwd=BASE_DIR,
+                cwd=APP_DIR,
                 stdout=self.server_log_handle,
                 stderr=self.server_log_handle,
                 creationflags=creationflags,
@@ -200,7 +230,7 @@ class PlantLabelLauncher:
         if self.wait_for_server():
             write_log("server ready")
             self.status_var.set("준비가 끝났습니다. 입력 화면이 자동으로 열립니다.")
-            self.open_browser()
+            self.root.after(1200, self.open_browser)
             return
 
         server_log_tail = self.read_server_log_tail()
@@ -252,9 +282,12 @@ class PlantLabelLauncher:
 
 if __name__ == "__main__":
     try:
-        write_log("process start")
-        PlantLabelLauncher().run()
-        write_log("process end")
+        if "--serve" in sys.argv:
+            run_server_mode()
+        else:
+            write_log("process start")
+            PlantLabelLauncher().run()
+            write_log("process end")
     except Exception as error:
         write_log(f"fatal error\n{traceback.format_exc()}")
         messagebox.showerror(

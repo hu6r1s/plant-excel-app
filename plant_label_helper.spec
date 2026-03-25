@@ -6,15 +6,22 @@ from PyInstaller.utils.hooks import collect_data_files
 datas = [
     ("app/static", "app/static"),
 ]
+datas += collect_data_files("Cython")
 datas += collect_data_files("paddleocr")
 
 
 a = Analysis(
     ["start_app.py"],
-    pathex=[],
+    pathex=["."],
     binaries=[],
     datas=datas,
-    hiddenimports=["uvicorn.logging", "uvicorn.loops.auto", "uvicorn.protocols.http.auto", "uvicorn.protocols.websockets.auto"],
+    hiddenimports=[
+        "app.main",
+        "uvicorn.logging",
+        "uvicorn.loops.auto",
+        "uvicorn.protocols.http.auto",
+        "uvicorn.protocols.websockets.auto",
+    ],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
