@@ -35,6 +35,19 @@ class PlantRow(BaseModel):
     quantity: int | float | str = ""
 
 
+class PurchaseLedgerRowUpdate(BaseModel):
+    name: str = ""
+    spec: str = ""
+    quantity: int | float | str = ""
+    cost: int | float | str = ""
+    wholesale: int | float | str = ""
+    retail: int | float | str = ""
+
+
+class PurchaseLedgerExportSelection(BaseModel):
+    ids: list[int] = []
+
+
 NUMERIC_WITH_COMMAS = re.compile(r"^\d{1,3}(,\d{3})+$")
 NUMERIC_PLAIN_MONEY = re.compile(r"^\d{4,7}$")
 PURE_NUMBER = re.compile(r"^\d+$")
@@ -133,10 +146,85 @@ def parse_spec_divisor(spec: str) -> int | None:
 def parse_number(value: int | float | str) -> int | float | str:
     if isinstance(value, (int, float)):
         return value
-    cleaned = normalize_text(value)
+    cleaned = normalize_text(value).replace(",", "")
     if not cleaned:
         return ""
     return float(cleaned) if cleaned.replace(".", "", 1).isdigit() else value
+
+
+def normalize_purchase_entry_row(
+    *,
+    name: str,
+    spec: str,
+    quantity: int | float | str,
+    cost: int | float | str,
+    wholesale: int | float | str,
+    retail: int | float | str,
+) -> tuple[str, str, float | None, float | None, float | None, float | None] | None:
+    normalized_name = name.strip()
+    if not normalized_name:
+        return None
+
+    normalized_quantity = parse_number(quantity)
+    normalized_cost = parse_number(cost)
+    normalized_wholesale = parse_number(wholesale)
+    normalized_retail = parse_number(retail)
+
+    return (
+        normalized_name,
+        normalize_text(spec),
+        float(normalized_quantity) if isinstance(normalized_quantity, (int, float)) else None,
+        float(normalized_cost) if isinstance(normalized_cost, (int, float)) else None,
+        float(normalized_wholesale) if isinstance(normalized_wholesale, (int, float)) else None,
+        float(normalized_retail) if isinstance(normalized_retail, (int, float)) else None,
+    )
+
+
+def fetch_purchase_entry(connection: sqlite3.Connection, entry_id: int) -> sqlite3.Row | None:
+    connection.row_factory = sqlite3.Row
+    return connection.execute(
+        """
+        SELECT id,
+               name,
+               spec,
+               quantity,
+               cost,
+               wholesale,
+               retail,
+               date(datetime(created_at, '+9 hours')) AS created_date
+        FROM purchase_entries
+        WHERE id = ?
+        """,
+        (entry_id,),
+    ).fetchone()
+
+
+def fetch_purchase_entries_by_ids(
+    connection: sqlite3.Connection, entry_ids: list[int]
+) -> list[sqlite3.Row]:
+    if not entry_ids:
+        return []
+
+    placeholders = ", ".join("?" for _ in entry_ids)
+    connection.row_factory = sqlite3.Row
+    rows = connection.execute(
+        f"""
+        SELECT id,
+               date(datetime(created_at, '+9 hours')) AS created_date,
+               name,
+               spec,
+               quantity,
+               cost,
+               wholesale,
+               retail
+        FROM purchase_entries
+        WHERE id IN ({placeholders})
+        """,
+        entry_ids,
+    ).fetchall()
+
+    row_map = {int(row["id"]): row for row in rows}
+    return [row_map[entry_id] for entry_id in entry_ids if entry_id in row_map]
 
 
 def build_purchase_workbook(rows: list[dict[str, Any]]) -> BytesIO:
@@ -483,24 +571,16 @@ async def save_purchase_ledger(rows: list[PlantRow]) -> JSONResponse:
     normalized_rows: list[tuple[str, str, float | None, float | None, float | None, float | None]] = []
 
     for row in rows:
-        if not row.name.strip():
-            continue
-
-        quantity = parse_number(row.quantity)
-        cost = parse_number(row.cost)
-        wholesale = parse_number(row.wholesale)
-        retail = parse_number(row.retail)
-
-        normalized_rows.append(
-            (
-                row.name.strip(),
-                normalize_text(row.spec),
-                float(quantity) if isinstance(quantity, (int, float)) else None,
-                float(cost) if isinstance(cost, (int, float)) else None,
-                float(wholesale) if isinstance(wholesale, (int, float)) else None,
-                float(retail) if isinstance(retail, (int, float)) else None,
-            )
+        normalized_row = normalize_purchase_entry_row(
+            name=row.name,
+            spec=row.spec,
+            quantity=row.quantity,
+            cost=row.cost,
+            wholesale=row.wholesale,
+            retail=row.retail,
         )
+        if normalized_row is not None:
+            normalized_rows.append(normalized_row)
 
     if not normalized_rows:
         return JSONResponse(
@@ -525,6 +605,71 @@ async def save_purchase_ledger(rows: list[PlantRow]) -> JSONResponse:
             "db_path": str(DB_PATH),
         }
     )
+
+
+@app.put("/api/purchase-ledger/{entry_id}")
+async def update_purchase_ledger(entry_id: int, row: PurchaseLedgerRowUpdate) -> JSONResponse:
+    normalized_row = normalize_purchase_entry_row(
+        name=row.name,
+        spec=row.spec,
+        quantity=row.quantity,
+        cost=row.cost,
+        wholesale=row.wholesale,
+        retail=row.retail,
+    )
+
+    if normalized_row is None:
+        return JSONResponse(
+            {"message": "?앸Ъ ?대쫫??鍮꾩슱 ?ㅽ깭濡???ν븷 ???놁뒿?덈떎."},
+            status_code=400,
+        )
+
+    with sqlite3.connect(DB_PATH) as connection:
+        cursor = connection.execute(
+            """
+            UPDATE purchase_entries
+            SET name = ?, spec = ?, quantity = ?, cost = ?, wholesale = ?, retail = ?
+            WHERE id = ?
+            """,
+            (*normalized_row, entry_id),
+        )
+        connection.commit()
+
+        if cursor.rowcount == 0:
+            return JSONResponse(
+                {"message": "?ㅼ젙???μ뿭??李얠쓣 ???놁뒿?덈떎."},
+                status_code=404,
+            )
+
+        item = fetch_purchase_entry(connection, entry_id)
+
+    return JSONResponse(
+        {
+            "message": "留ㅼ엯 ???μ뿭???섏젙?덉뒿?덈떎.",
+            "item": dict(item) if item else None,
+        }
+    )
+
+
+@app.delete("/api/purchase-ledger/{entry_id}")
+async def delete_purchase_ledger(entry_id: int) -> JSONResponse:
+    with sqlite3.connect(DB_PATH) as connection:
+        cursor = connection.execute(
+            """
+            DELETE FROM purchase_entries
+            WHERE id = ?
+            """,
+            (entry_id,),
+        )
+        connection.commit()
+
+    if cursor.rowcount == 0:
+        return JSONResponse(
+            {"message": "?곗궘???μ뿭??李얠쓣 ???놁뒿?덈떎."},
+            status_code=404,
+        )
+
+    return JSONResponse({"message": "留ㅼ엯 ???μ뿭???곗궘?덉뒿?덈떎."})
 
 
 def build_purchase_ledger_query(
@@ -607,5 +752,36 @@ async def export_purchase_ledger(
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         headers={
             "Content-Disposition": 'attachment; filename="purchase-ledger.xlsx"'
+        },
+    )
+
+
+@app.post("/api/purchase-ledger/export/selected")
+async def export_selected_purchase_ledger(selection: PurchaseLedgerExportSelection) -> Response:
+    entry_ids = [entry_id for entry_id in selection.ids if isinstance(entry_id, int)]
+    if not entry_ids:
+        return Response(
+            content="선택된 항목이 없습니다.".encode("utf-8"),
+            media_type="text/plain; charset=utf-8",
+            status_code=400,
+        )
+
+    with sqlite3.connect(DB_PATH) as connection:
+        rows = fetch_purchase_entries_by_ids(connection, entry_ids)
+
+    if not rows:
+        return Response(
+            content="내보낼 항목을 찾지 못했습니다.".encode("utf-8"),
+            media_type="text/plain; charset=utf-8",
+            status_code=404,
+        )
+
+    buffer = build_purchase_ledger_workbook([dict(row) for row in rows])
+
+    return Response(
+        content=buffer.getvalue(),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={
+            "Content-Disposition": 'attachment; filename="purchase-ledger-selection.xlsx"'
         },
     )

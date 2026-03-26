@@ -12,7 +12,7 @@
         <div class="hero-copy">
           <p class="eyebrow">Purchase Ledger</p>
           <h1>저장된 매입장 목록</h1>
-          <p class="hero-text">입력 화면에서 저장한 매입장 데이터를 날짜순으로 확인합니다.</p>
+          <p class="hero-text">저장 내역을 검색하고, 수정하거나 삭제하고, 전체 또는 선택 항목만 엑셀로 내보낼 수 있습니다.</p>
         </div>
         <div class="hero-panel">
           <div class="action-card">
@@ -38,6 +38,7 @@
               <h2>조회 조건</h2>
             </div>
           </div>
+
           <div class="filter-grid">
             <label class="field-block">
               <span>식물 이름</span>
@@ -59,14 +60,22 @@
               </select>
             </label>
           </div>
+
           <div class="inline-actions">
             <button id="clear-ledger-filter-btn" class="btn" type="button">필터 초기화</button>
-            <button id="export-ledger-btn" class="btn" type="button">
-              <span id="export-ledger-label">엑셀로 내보내기</span>
-              <span id="export-ledger-spinner" class="spinner hidden" aria-hidden="true"></span>
+            <button id="export-all-ledger-btn" class="btn" type="button">
+              <span id="export-all-ledger-label">전체 엑셀</span>
+              <span id="export-all-ledger-spinner" class="spinner hidden" aria-hidden="true"></span>
+            </button>
+            <button id="export-selected-ledger-btn" class="btn primary" type="button">
+              <span id="export-selected-ledger-label">선택 엑셀</span>
+              <span id="export-selected-ledger-spinner" class="spinner hidden" aria-hidden="true"></span>
             </button>
           </div>
+
+          <p id="selection-summary" class="selection-summary">현재 선택된 항목이 없습니다.</p>
         </section>
+
         <section class="panel panel-wide">
           <div class="panel-header">
             <div>
@@ -78,6 +87,9 @@
             <table class="entry-table">
               <thead>
                 <tr>
+                  <th class="check-col">
+                    <input id="select-all-ledger" type="checkbox" aria-label="현재 목록 전체 선택" />
+                  </th>
                   <th>ID</th>
                   <th>저장날짜</th>
                   <th>식물 이름</th>
@@ -86,6 +98,7 @@
                   <th>단가</th>
                   <th>도매가</th>
                   <th>소매가</th>
+                  <th>관리</th>
                 </tr>
               </thead>
               <tbody id="ledger-body"></tbody>

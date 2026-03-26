@@ -187,6 +187,11 @@ h2 {
   cursor: wait;
 }
 
+.btn-small {
+  padding: 6px 10px;
+  font-size: 12px;
+}
+
 .table-wrap {
   overflow: auto;
   border-radius: 16px;
@@ -224,6 +229,14 @@ h2 {
   background: #fff;
 }
 
+.entry-table input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  accent-color: var(--accent);
+  border-radius: 4px;
+}
+
 .entry-table input:focus {
   outline: 2px solid rgba(44, 106, 75, 0.18);
   border-color: rgba(44, 106, 75, 0.26);
@@ -238,6 +251,19 @@ h2 {
   text-align: center;
   color: var(--muted);
   padding: 28px 12px;
+}
+
+.selection-summary {
+  margin: 12px 0 0;
+  color: var(--accent-strong);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.row-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
 }
 
 .filter-grid {
