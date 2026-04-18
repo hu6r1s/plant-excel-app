@@ -4,3 +4,4 @@ __pycache__/
 app/data/*
 build/*
 dist/*
+venv/

@@ -201,7 +201,7 @@ h2 {
 
 .entry-table {
   width: 100%;
-  min-width: 780px;
+  min-width: 940px;
   border-collapse: collapse;
   background: var(--surface-strong);
 }
@@ -245,6 +245,50 @@ h2 {
 .check-col {
   width: 70px;
   text-align: center;
+}
+
+.entry-table-main {
+  min-width: 900px;
+}
+
+.entry-table-ledger {
+  min-width: 1110px;
+}
+
+.entry-table .col-check {
+  width: 56px;
+}
+
+.entry-table .col-id {
+  width: 64px;
+}
+
+.entry-table .col-date {
+  width: 104px;
+}
+
+.entry-table .col-name {
+  width: 18%;
+}
+
+.entry-table .col-vendor {
+  width: 12%;
+}
+
+.entry-table .col-spec {
+  width: 68px;
+}
+
+.entry-table .col-count {
+  width: 68px;
+}
+
+.entry-table .col-price {
+  width: 98px;
+}
+
+.entry-table .col-actions {
+  width: 112px;
 }
 
 .empty-cell {

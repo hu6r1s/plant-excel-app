@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>매입장 목록</title>
+    <title>매입처 목록</title>
     <link rel="stylesheet" href="/static/styles.css" />
   </head>
   <body>
@@ -11,8 +11,10 @@
       <header class="hero">
         <div class="hero-copy">
           <p class="eyebrow">Purchase Ledger</p>
-          <h1>저장된 매입장 목록</h1>
-          <p class="hero-text">저장 내역을 검색하고, 수정하거나 삭제하고, 전체 또는 선택 항목만 엑셀로 내보낼 수 있습니다.</p>
+          <h1>저장된 매입처 목록</h1>
+          <p class="hero-text">
+            저장된 매입 내역을 조회하고 수정하거나 삭제하고, 전체 또는 선택 항목만 엑셀로 내보낼 수 있습니다.
+          </p>
         </div>
         <div class="hero-panel">
           <div class="action-card">
@@ -49,7 +51,7 @@
               <select id="ledger-sort">
                 <option value="date">저장날짜</option>
                 <option value="id">ID</option>
-                <option value="name">이름(가나다)</option>
+                <option value="name">이름</option>
               </select>
             </label>
             <label class="field-block">
@@ -71,6 +73,10 @@
               <span id="export-selected-ledger-label">선택 엑셀</span>
               <span id="export-selected-ledger-spinner" class="spinner hidden" aria-hidden="true"></span>
             </button>
+            <button id="export-selected-labels-btn" class="btn" type="button">
+              <span id="export-selected-labels-label">선택 라벨 엑셀</span>
+              <span id="export-selected-labels-spinner" class="spinner hidden" aria-hidden="true"></span>
+            </button>
           </div>
 
           <p id="selection-summary" class="selection-summary">현재 선택된 항목이 없습니다.</p>
@@ -84,7 +90,21 @@
             </div>
           </div>
           <div class="table-wrap">
-            <table class="entry-table">
+            <table class="entry-table entry-table-ledger">
+              <colgroup>
+                <col class="col-check" />
+                <col class="col-id" />
+                <col class="col-date" />
+                <col class="col-name" />
+                <col class="col-vendor" />
+                <col class="col-spec" />
+                <col class="col-count" />
+                <col class="col-count" />
+                <col class="col-price" />
+                <col class="col-price" />
+                <col class="col-price" />
+                <col class="col-actions" />
+              </colgroup>
               <thead>
                 <tr>
                   <th class="check-col">
@@ -93,8 +113,10 @@
                   <th>ID</th>
                   <th>저장날짜</th>
                   <th>식물 이름</th>
+                  <th>매입처</th>
                   <th>규격</th>
                   <th>수량</th>
+                  <th>매수</th>
                   <th>단가</th>
                   <th>도매가</th>
                   <th>소매가</th>

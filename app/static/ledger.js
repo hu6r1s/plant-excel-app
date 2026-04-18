@@ -13,8 +13,13 @@ const exportAllLedgerSpinner = document.querySelector("#export-all-ledger-spinne
 const exportSelectedLedgerButton = document.querySelector("#export-selected-ledger-btn");
 const exportSelectedLedgerLabel = document.querySelector("#export-selected-ledger-label");
 const exportSelectedLedgerSpinner = document.querySelector("#export-selected-ledger-spinner");
+const exportSelectedLabelsButton = document.querySelector("#export-selected-labels-btn");
+const exportSelectedLabelsLabel = document.querySelector("#export-selected-labels-label");
+const exportSelectedLabelsSpinner = document.querySelector("#export-selected-labels-spinner");
 const selectionSummary = document.querySelector("#selection-summary");
 const selectAllLedgerCheckbox = document.querySelector("#select-all-ledger");
+
+const PRICE_FIELDS = ["cost", "wholesale", "retail"];
 
 let searchDebounceTimer = null;
 let currentItems = [];
@@ -46,13 +51,43 @@ const formatEditableValue = (value) => {
   return Number.isInteger(numberValue) ? `${numberValue}` : `${numberValue}`;
 };
 
+const parsePriceInput = (value) => {
+  if (value === "" || value === null || value === undefined) {
+    return "";
+  }
+
+  const cleaned = String(value).replaceAll(",", "").replaceAll("원", "").trim();
+  if (!cleaned) {
+    return "";
+  }
+
+  const parsed = Number(cleaned);
+  if (Number.isNaN(parsed)) {
+    return "";
+  }
+
+  if (cleaned.includes(".") || Math.abs(parsed) < 1000) {
+    return Math.round(parsed * 1000);
+  }
+
+  return Math.round(parsed);
+};
+
+const formatPriceDisplay = (value) =>
+  value === "" ? "" : Number(value).toLocaleString("ko-KR");
+
+const calculateRetailFromWholesale = (wholesale) =>
+  Math.round(Number(wholesale || 0) * 2);
+
 const buildQueryString = () => {
   const params = new URLSearchParams();
   if (nameInput.value.trim()) {
     params.set("name", nameInput.value.trim());
   }
+
   params.set("sort", sortSelect.value || "date");
   params.set("direction", directionSelect.value || "desc");
+
   const query = params.toString();
   return query ? `?${query}` : "";
 };
@@ -66,14 +101,14 @@ const updateSelectionSummary = () => {
 
   if (selectedTotalCount > 0) {
     if (selectedVisibleCount > 0) {
-      selectionSummary.textContent = `전체 ${selectedTotalCount}개 선택됨, 현재 목록에서 ${selectedVisibleCount}개 보임`;
+      selectionSummary.textContent = `전체 ${selectedTotalCount}개 선택 중 현재 목록에 ${selectedVisibleCount}개가 보입니다.`;
     } else {
-      selectionSummary.textContent = `전체 ${selectedTotalCount}개 선택됨, 현재 검색 결과에는 보이지 않습니다.`;
+      selectionSummary.textContent = `전체 ${selectedTotalCount}개를 선택했지만 현재 검색 결과에는 보이지 않습니다.`;
     }
   } else if (!visibleIds.length) {
     selectionSummary.textContent = "현재 보이는 항목이 없습니다.";
   } else {
-    selectionSummary.textContent = "현재 선택된 항목이 없습니다. 체크하면 선택 엑셀로 내보낼 수 있습니다.";
+    selectionSummary.textContent = "현재 선택된 항목이 없습니다.";
   }
 
   selectAllLedgerCheckbox.checked =
@@ -82,13 +117,15 @@ const updateSelectionSummary = () => {
     selectedVisibleCount > 0 && selectedVisibleCount < visibleIds.length;
 };
 
+const buildEditablePriceValue = (value) => formatPriceDisplay(parsePriceInput(value));
+
 const renderLedgerRows = (items) => {
   ledgerBody.innerHTML = "";
 
   if (!items.length) {
     ledgerBody.innerHTML = `
       <tr>
-        <td colspan="10" class="empty-cell">저장된 매입장 데이터가 없습니다.</td>
+        <td colspan="12" class="empty-cell">저장된 매입 데이터가 없습니다.</td>
       </tr>
     `;
     updateSelectionSummary();
@@ -96,24 +133,35 @@ const renderLedgerRows = (items) => {
   }
 
   items.forEach((item) => {
+    const entryId = Number(item.id);
     const tr = document.createElement("tr");
-    tr.dataset.id = String(item.id);
+    tr.dataset.id = String(entryId);
 
-    if (editingId === item.id) {
+    if (editingId === entryId) {
       tr.innerHTML = `
         <td class="check-col">
-          <input class="row-select" data-id="${item.id}" type="checkbox" ${
-            selectedIds.has(item.id) ? "checked" : ""
+          <input class="row-select" data-id="${entryId}" type="checkbox" ${
+            selectedIds.has(entryId) ? "checked" : ""
           } />
         </td>
-        <td>${item.id}</td>
+        <td>${entryId}</td>
         <td>${escapeHtml(item.created_date || "-")}</td>
         <td><input data-field="name" type="text" value="${escapeHtml(item.name || "")}" /></td>
+        <td><input data-field="vendor" type="text" value="${escapeHtml(item.vendor || "")}" /></td>
         <td><input data-field="spec" type="text" value="${escapeHtml(item.spec || "")}" /></td>
         <td><input data-field="quantity" type="text" value="${escapeHtml(formatEditableValue(item.quantity))}" /></td>
-        <td><input data-field="cost" type="text" value="${escapeHtml(formatEditableValue(item.cost))}" /></td>
-        <td><input data-field="wholesale" type="text" value="${escapeHtml(formatEditableValue(item.wholesale))}" /></td>
-        <td><input data-field="retail" type="text" value="${escapeHtml(formatEditableValue(item.retail))}" /></td>
+        <td><input data-field="purchase_count" type="text" value="${escapeHtml(
+          formatEditableValue(item.purchase_count)
+        )}" /></td>
+        <td><input data-field="cost" type="text" value="${escapeHtml(
+          buildEditablePriceValue(item.cost)
+        )}" /></td>
+        <td><input data-field="wholesale" type="text" value="${escapeHtml(
+          buildEditablePriceValue(item.wholesale)
+        )}" /></td>
+        <td><input data-field="retail" type="text" value="${escapeHtml(
+          buildEditablePriceValue(item.retail)
+        )}" /></td>
         <td>
           <div class="row-actions">
             <button class="btn primary btn-small" type="button" data-action="save">저장</button>
@@ -124,15 +172,17 @@ const renderLedgerRows = (items) => {
     } else {
       tr.innerHTML = `
         <td class="check-col">
-          <input class="row-select" data-id="${item.id}" type="checkbox" ${
-            selectedIds.has(item.id) ? "checked" : ""
+          <input class="row-select" data-id="${entryId}" type="checkbox" ${
+            selectedIds.has(entryId) ? "checked" : ""
           } />
         </td>
-        <td>${item.id}</td>
+        <td>${entryId}</td>
         <td>${escapeHtml(item.created_date || "-")}</td>
         <td>${escapeHtml(item.name || "-")}</td>
+        <td>${escapeHtml(item.vendor || "-")}</td>
         <td>${escapeHtml(item.spec || "-")}</td>
         <td>${item.quantity ?? "-"}</td>
+        <td>${item.purchase_count ?? "-"}</td>
         <td>${formatCurrency(item.cost)}</td>
         <td>${formatCurrency(item.wholesale)}</td>
         <td>${formatCurrency(item.retail)}</td>
@@ -155,7 +205,7 @@ const loadLedger = async () => {
   refreshButton.disabled = true;
   refreshSpinner.classList.remove("hidden");
   refreshLabel.textContent = "불러오는 중...";
-  ledgerFeedback.textContent = "매입장 데이터를 불러오고 있습니다.";
+  ledgerFeedback.textContent = "매입 데이터를 불러오고 있습니다.";
 
   try {
     const response = await fetch(`/api/purchase-ledger${buildQueryString()}`);
@@ -164,17 +214,20 @@ const loadLedger = async () => {
       throw new Error(result.message || "ledger fetch failed");
     }
 
-    currentItems = result.items || [];
+    currentItems = (result.items || []).map((item) => ({
+      ...item,
+      id: Number(item.id),
+    }));
 
     if (editingId !== null && !currentItems.some((item) => item.id === editingId)) {
       editingId = null;
     }
 
     renderLedgerRows(currentItems);
-    ledgerFeedback.textContent = `${result.count || 0}개의 저장 항목을 불러왔습니다.`;
+    ledgerFeedback.textContent = `${result.count || 0}개의 항목을 불러왔습니다.`;
   } catch (error) {
     console.error(error);
-    ledgerFeedback.textContent = "매입장 목록을 불러오지 못했습니다.";
+    ledgerFeedback.textContent = "매입 목록을 불러오지 못했습니다.";
   } finally {
     refreshButton.disabled = false;
     refreshSpinner.classList.add("hidden");
@@ -194,11 +247,19 @@ const downloadResponseAsFile = async (response, filename) => {
   URL.revokeObjectURL(url);
 };
 
+const getLedgerExportIds = () => {
+  const selected = [...selectedIds];
+  return {
+    selectedCount: selected.length,
+    exportIds: selected.length ? selected : getVisibleIds(),
+  };
+};
+
 const exportAllLedger = async () => {
   exportAllLedgerButton.disabled = true;
   exportAllLedgerSpinner.classList.remove("hidden");
   exportAllLedgerLabel.textContent = "내보내는 중...";
-  ledgerFeedback.textContent = "매입장 전체 데이터를 엑셀로 내보내고 있습니다.";
+  ledgerFeedback.textContent = "매입 내역 전체를 엑셀로 내보내고 있습니다.";
 
   try {
     const response = await fetch("/api/purchase-ledger/export");
@@ -207,10 +268,10 @@ const exportAllLedger = async () => {
     }
 
     await downloadResponseAsFile(response, "purchase-ledger.xlsx");
-    ledgerFeedback.textContent = "매입장 전체 엑셀 파일을 내려받았습니다.";
+    ledgerFeedback.textContent = "매입 내역 전체를 엑셀로 내보냈습니다.";
   } catch (error) {
     console.error(error);
-    ledgerFeedback.textContent = "매입장 전체 엑셀 내보내기에 실패했습니다.";
+    ledgerFeedback.textContent = "전체 엑셀 내보내기에 실패했습니다.";
   } finally {
     exportAllLedgerButton.disabled = false;
     exportAllLedgerSpinner.classList.add("hidden");
@@ -219,8 +280,7 @@ const exportAllLedger = async () => {
 };
 
 const exportSelectedLedger = async () => {
-  const selected = [...selectedIds];
-  const exportIds = selected.length ? selected : getVisibleIds();
+  const { selectedCount, exportIds } = getLedgerExportIds();
 
   if (!exportIds.length) {
     ledgerFeedback.textContent = "내보낼 항목이 없습니다.";
@@ -231,9 +291,9 @@ const exportSelectedLedger = async () => {
   exportSelectedLedgerSpinner.classList.remove("hidden");
   exportSelectedLedgerLabel.textContent = "내보내는 중...";
   ledgerFeedback.textContent =
-    selected.length > 0
-      ? `${selected.length}개 선택 항목을 엑셀로 내보내고 있습니다.`
-      : "체크된 항목이 없어서 현재 검색된 목록 전체를 엑셀로 내보내고 있습니다.";
+    selectedCount > 0
+      ? `${selectedCount}개 선택 항목을 엑셀로 내보내고 있습니다.`
+      : "현재 검색된 목록 전체를 엑셀로 내보내고 있습니다.";
 
   try {
     const response = await fetch("/api/purchase-ledger/export/selected", {
@@ -251,12 +311,12 @@ const exportSelectedLedger = async () => {
 
     await downloadResponseAsFile(response, "purchase-ledger-selection.xlsx");
     ledgerFeedback.textContent =
-      selected.length > 0
+      selectedCount > 0
         ? "선택한 항목을 엑셀로 내보냈습니다."
         : "현재 검색된 목록을 엑셀로 내보냈습니다.";
   } catch (error) {
     console.error(error);
-    ledgerFeedback.textContent = "선택 항목 엑셀 내보내기에 실패했습니다.";
+    ledgerFeedback.textContent = "선택 엑셀 내보내기에 실패했습니다.";
   } finally {
     exportSelectedLedgerButton.disabled = false;
     exportSelectedLedgerSpinner.classList.add("hidden");
@@ -264,8 +324,53 @@ const exportSelectedLedger = async () => {
   }
 };
 
+const exportSelectedLabels = async () => {
+  const { selectedCount, exportIds } = getLedgerExportIds();
+
+  if (!exportIds.length) {
+    ledgerFeedback.textContent = "라벨용으로 내보낼 항목이 없습니다.";
+    return;
+  }
+
+  exportSelectedLabelsButton.disabled = true;
+  exportSelectedLabelsSpinner.classList.remove("hidden");
+  exportSelectedLabelsLabel.textContent = "내보내는 중...";
+  ledgerFeedback.textContent =
+    selectedCount > 0
+      ? `${selectedCount}개 선택 항목을 라벨용 엑셀로 내보내고 있습니다.`
+      : "현재 검색된 목록 전체를 라벨용 엑셀로 내보내고 있습니다.";
+
+  try {
+    const response = await fetch("/api/purchase-ledger/export/selected-labels", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ ids: exportIds }),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(errorText || "selected label export failed");
+    }
+
+    await downloadResponseAsFile(response, "plant-labels-selection.xlsx");
+    ledgerFeedback.textContent =
+      selectedCount > 0
+        ? "선택 항목을 라벨용 엑셀로 내보냈습니다."
+        : "현재 검색된 목록을 라벨용 엑셀로 내보냈습니다.";
+  } catch (error) {
+    console.error(error);
+    ledgerFeedback.textContent = "라벨용 엑셀 내보내기에 실패했습니다.";
+  } finally {
+    exportSelectedLabelsButton.disabled = false;
+    exportSelectedLabelsSpinner.classList.add("hidden");
+    exportSelectedLabelsLabel.textContent = "선택 라벨 엑셀";
+  }
+};
+
 const updateEntry = async (entryId, payload) => {
-  ledgerFeedback.textContent = "매입장 내역을 저장하고 있습니다.";
+  ledgerFeedback.textContent = "매입 내역을 저장하고 있습니다.";
 
   const response = await fetch(`/api/purchase-ledger/${entryId}`, {
     method: "PUT",
@@ -281,17 +386,17 @@ const updateEntry = async (entryId, payload) => {
   }
 
   editingId = null;
-  ledgerFeedback.textContent = "매입장 내역을 수정했습니다.";
+  ledgerFeedback.textContent = "매입 내역을 수정했습니다.";
   await loadLedger();
 };
 
 const deleteEntry = async (entryId) => {
-  const confirmed = window.confirm("이 매입장 내역을 삭제할까요?");
+  const confirmed = window.confirm("이 매입 내역을 삭제할까요?");
   if (!confirmed) {
     return;
   }
 
-  ledgerFeedback.textContent = "매입장 내역을 삭제하고 있습니다.";
+  ledgerFeedback.textContent = "매입 내역을 삭제하고 있습니다.";
 
   const response = await fetch(`/api/purchase-ledger/${entryId}`, {
     method: "DELETE",
@@ -306,7 +411,8 @@ const deleteEntry = async (entryId) => {
   if (editingId === entryId) {
     editingId = null;
   }
-  ledgerFeedback.textContent = "매입장 내역을 삭제했습니다.";
+
+  ledgerFeedback.textContent = "매입 내역을 삭제했습니다.";
   await loadLedger();
 };
 
@@ -316,6 +422,27 @@ const collectRowPayload = (rowElement) => {
     payload[input.dataset.field] = input.value.trim();
   });
   return payload;
+};
+
+const setFormattedPrice = (input, value) => {
+  if (!input) {
+    return;
+  }
+
+  input.value = value === "" ? "" : formatPriceDisplay(value);
+};
+
+const syncLedgerPriceFields = (rowElement, sourceField) => {
+  const wholesaleInput = rowElement.querySelector('[data-field="wholesale"]');
+  const retailInput = rowElement.querySelector('[data-field="retail"]');
+
+  if (sourceField === "wholesale" && wholesaleInput) {
+    const wholesale = parsePriceInput(wholesaleInput.value);
+    setFormattedPrice(
+      retailInput,
+      wholesale === "" ? "" : calculateRetailFromWholesale(wholesale)
+    );
+  }
 };
 
 const scheduleLedgerReload = () => {
@@ -357,6 +484,10 @@ exportSelectedLedgerButton.addEventListener("click", () => {
   exportSelectedLedger();
 });
 
+exportSelectedLabelsButton.addEventListener("click", () => {
+  exportSelectedLabels();
+});
+
 selectAllLedgerCheckbox.addEventListener("change", () => {
   const visibleIds = getVisibleIds();
   if (selectAllLedgerCheckbox.checked) {
@@ -364,6 +495,7 @@ selectAllLedgerCheckbox.addEventListener("change", () => {
   } else {
     visibleIds.forEach((id) => selectedIds.delete(id));
   }
+
   renderLedgerRows(currentItems);
 });
 
@@ -379,8 +511,38 @@ ledgerBody.addEventListener("change", (event) => {
   } else {
     selectedIds.delete(entryId);
   }
+
   updateSelectionSummary();
 });
+
+ledgerBody.addEventListener("input", (event) => {
+  const input = event.target.closest("input[data-field]");
+  if (!input) {
+    return;
+  }
+
+  const rowElement = input.closest("tr[data-id]");
+  if (!rowElement) {
+    return;
+  }
+
+  if (input.dataset.field === "wholesale") {
+    syncLedgerPriceFields(rowElement, input.dataset.field);
+  }
+});
+
+ledgerBody.addEventListener(
+  "blur",
+  (event) => {
+    const input = event.target.closest("input[data-field]");
+    if (!input || !PRICE_FIELDS.includes(input.dataset.field)) {
+      return;
+    }
+
+    input.value = formatPriceDisplay(parsePriceInput(input.value));
+  },
+  true
+);
 
 ledgerBody.addEventListener("click", async (event) => {
   const button = event.target.closest("button[data-action]");

@@ -110,3 +110,129 @@ OSError: [WinError 64]  Ʈũ ̸  ̻   ϴ
 [2026-03-23 17:18:15] launcher closing
 [2026-03-23 17:18:15] terminating server process
 [2026-03-23 17:18:16] process end
+[2026-04-18 15:42:48] process start
+[2026-04-18 15:42:48] launcher init start
+[2026-04-18 15:42:48] launcher init complete
+[2026-04-18 15:42:48] start_server called
+[2026-04-18 15:42:48] server process started pid=28600
+[2026-04-18 15:42:49] finish_startup check
+[2026-04-18 15:42:49] server process exited early with code 1
+[2026-04-18 15:42:49] server start failed
+    await future
+OSError: [WinError 64]  Ʈũ ̸  ̻   ϴ
+
+=== server start 2026-03-23 17:15:31 ===
+:  Ͽ شǴ  ã ߽ϴ.
+C:\Users\JUNG\Desktop\plant-excel-app\.venv\Lib\site-packages\paddle\utils\cpp_extension\extension_utils.py:711: UserWarning: No ccache found. Please be aware that recompiling all source files may be required. You can download and install ccache from: https://github.com/ccache/ccache/blob/master/doc/INSTALL.md
+  warnings.warn(warning_message)
+INFO:     Started server process [19780]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://127.0.0.1:8000 (Press CTRL+C to quit)
+INFO:     127.0.0.1:59358 - "GET / HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59358 - "GET /static/styles.css HTTP/1.1" 304 Not Modified
+INFO:     127.0.0.1:60809 - "GET /static/app.js HTTP/1.1" 304 Not Modified
+INFO:     127.0.0.1:56673 - "GET /ledger HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56673 - "GET /static/ledger.js HTTP/1.1" 304 Not Modified
+INFO:     127.0.0.1:56673 - "GET /api/purchase-ledger?sort=date&direction=desc HTTP/1.1" 200 OK
+
+=== server start 2026-04-18 15:42:48 ===
+C:\Users\JUNG\AppData\Local\Microsoft\WindowsApps\PythonSoftwareFoundation.Python.3.13_qbz5n2kfra8p0\python.exe: No module named uvicorn
+[2026-04-18 15:42:52] open_browser called before server ready
+[2026-04-18 15:46:47] open_browser called before server ready
+[2026-04-18 15:46:48] launcher closing
+[2026-04-18 15:46:49] process end
+[2026-04-18 15:49:10] process start
+[2026-04-18 15:49:10] launcher init start
+[2026-04-18 15:49:10] launcher init complete
+[2026-04-18 15:49:11] start_server called
+[2026-04-18 15:49:11] server process started pid=5996
+[2026-04-18 15:49:11] finish_startup check
+[2026-04-18 15:49:11] server process exited early with code 1
+[2026-04-18 15:49:11] server start failed
+=== server start 2026-03-23 17:15:31 ===
+:  Ͽ شǴ  ã ߽ϴ.
+C:\Users\JUNG\Desktop\plant-excel-app\.venv\Lib\site-packages\paddle\utils\cpp_extension\extension_utils.py:711: UserWarning: No ccache found. Please be aware that recompiling all source files may be required. You can download and install ccache from: https://github.com/ccache/ccache/blob/master/doc/INSTALL.md
+  warnings.warn(warning_message)
+INFO:     Started server process [19780]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://127.0.0.1:8000 (Press CTRL+C to quit)
+INFO:     127.0.0.1:59358 - "GET / HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59358 - "GET /static/styles.css HTTP/1.1" 304 Not Modified
+INFO:     127.0.0.1:60809 - "GET /static/app.js HTTP/1.1" 304 Not Modified
+INFO:     127.0.0.1:56673 - "GET /ledger HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56673 - "GET /static/ledger.js HTTP/1.1" 304 Not Modified
+INFO:     127.0.0.1:56673 - "GET /api/purchase-ledger?sort=date&direction=desc HTTP/1.1" 200 OK
+
+=== server start 2026-04-18 15:42:48 ===
+C:\Users\JUNG\AppData\Local\Microsoft\WindowsApps\PythonSoftwareFoundation.Python.3.13_qbz5n2kfra8p0\python.exe: No module named uvicorn
+
+=== server start 2026-04-18 15:49:11 ===
+C:\Users\JUNG\AppData\Local\Microsoft\WindowsApps\PythonSoftwareFoundation.Python.3.13_qbz5n2kfra8p0\python.exe: No module named uvicorn
+[2026-04-18 15:49:17] launcher closing
+[2026-04-18 15:49:18] process end
+[2026-04-18 15:54:26] process start
+[2026-04-18 15:54:26] launcher init start
+[2026-04-18 15:54:26] launcher init complete
+[2026-04-18 15:54:26] start_server called
+[2026-04-18 15:54:26] server process started pid=3568
+[2026-04-18 15:54:26] finish_startup check
+[2026-04-18 15:54:26] server process exited early with code 1
+[2026-04-18 15:54:27] server start failed
+  warnings.warn(warning_message)
+INFO:     Started server process [19780]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://127.0.0.1:8000 (Press CTRL+C to quit)
+INFO:     127.0.0.1:59358 - "GET / HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59358 - "GET /static/styles.css HTTP/1.1" 304 Not Modified
+INFO:     127.0.0.1:60809 - "GET /static/app.js HTTP/1.1" 304 Not Modified
+INFO:     127.0.0.1:56673 - "GET /ledger HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56673 - "GET /static/ledger.js HTTP/1.1" 304 Not Modified
+INFO:     127.0.0.1:56673 - "GET /api/purchase-ledger?sort=date&direction=desc HTTP/1.1" 200 OK
+
+=== server start 2026-04-18 15:42:48 ===
+C:\Users\JUNG\AppData\Local\Microsoft\WindowsApps\PythonSoftwareFoundation.Python.3.13_qbz5n2kfra8p0\python.exe: No module named uvicorn
+
+=== server start 2026-04-18 15:49:11 ===
+C:\Users\JUNG\AppData\Local\Microsoft\WindowsApps\PythonSoftwareFoundation.Python.3.13_qbz5n2kfra8p0\python.exe: No module named uvicorn
+
+=== server start 2026-04-18 15:54:26 ===
+C:\Users\JUNG\anaconda3\python.exe: No module named uvicorn
+[2026-04-18 15:59:56] process start
+[2026-04-18 15:59:56] launcher init start
+[2026-04-18 15:59:56] launcher init complete
+[2026-04-18 15:59:57] start_server called
+[2026-04-18 15:59:57] server process started pid=23844
+[2026-04-18 15:59:57] finish_startup check
+[2026-04-18 15:59:58] server process exited early with code 1
+[2026-04-18 15:59:58] server start failed
+    ~~~~~~~~~~~^^
+  File "C:\Users\JUNG\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.13_qbz5n2kfra8p0\LocalCache\local-packages\Python313\site-packages\uvicorn\config.py", line 441, in load
+    self.loaded_app = import_from_string(self.app)
+                      ~~~~~~~~~~~~~~~~~~^^^^^^^^^^
+  File "C:\Users\JUNG\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.13_qbz5n2kfra8p0\LocalCache\local-packages\Python313\site-packages\uvicorn\importer.py", line 22, in import_from_string
+    raise exc from None
+  File "C:\Users\JUNG\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.13_qbz5n2kfra8p0\LocalCache\local-packages\Python313\site-packages\uvicorn\importer.py", line 19, in import_from_string
+    module = importlib.import_module(module_str)
+  File "C:\Program Files\WindowsApps\PythonSoftwareFoundation.Python.3.13_3.13.3568.0_x64__qbz5n2kfra8p0\Lib\importlib\__init__.py", line 88, in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "<frozen importlib._bootstrap>", line 1395, in _gcd_import
+  File "<frozen importlib._bootstrap>", line 1360, in _find_and_load
+  File "<frozen importlib._bootstrap>", line 1331, in _find_and_load_unlocked
+  File "<frozen importlib._bootstrap>", line 935, in _load_unlocked
+  File "<frozen importlib._bootstrap_external>", line 1023, in exec_module
+  File "<frozen importlib._bootstrap>", line 488, in _call_with_frames_removed
+  File "C:\Users\JUNG\Desktop\plant-excel-app\app\main.py", line 7, in <module>
+    from fastapi import FastAPI, UploadFile
+ModuleNotFoundError: No module named 'fastapi'
+[2026-04-18 16:00:44] launcher closing
+[2026-04-18 16:00:45] process end
+[2026-04-18 16:20:20] process start
+[2026-04-18 16:20:20] launcher init start
+[2026-04-18 16:20:21] launcher init complete
+[2026-04-18 16:20:21] start_server called
+[2026-04-18 16:20:21] server process started pid=32388
+[2026-04-18 16:20:21] finish_startup check

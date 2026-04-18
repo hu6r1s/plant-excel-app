@@ -28,17 +28,21 @@ app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 class PlantRow(BaseModel):
     name: str = ""
+    vendor: str = ""
     spec: str = ""
     cost: int | float | str = ""
     wholesale: int | float | str = ""
     retail: int | float | str = ""
     quantity: int | float | str = ""
+    purchase_count: int | float | str = ""
 
 
 class PurchaseLedgerRowUpdate(BaseModel):
     name: str = ""
+    vendor: str = ""
     spec: str = ""
     quantity: int | float | str = ""
+    purchase_count: int | float | str = ""
     cost: int | float | str = ""
     wholesale: int | float | str = ""
     retail: int | float | str = ""
@@ -77,8 +81,10 @@ def init_db() -> None:
             CREATE TABLE IF NOT EXISTS purchase_entries (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 name TEXT NOT NULL,
+                vendor TEXT,
                 spec TEXT,
                 quantity REAL,
+                purchase_count REAL,
                 cost REAL,
                 wholesale REAL,
                 retail REAL,
@@ -86,6 +92,13 @@ def init_db() -> None:
             )
             """
         )
+        existing_columns = {
+            row[1] for row in connection.execute("PRAGMA table_info(purchase_entries)")
+        }
+        if "vendor" not in existing_columns:
+            connection.execute("ALTER TABLE purchase_entries ADD COLUMN vendor TEXT")
+        if "purchase_count" not in existing_columns:
+            connection.execute("ALTER TABLE purchase_entries ADD COLUMN purchase_count REAL")
         connection.commit()
 
 
@@ -155,25 +168,30 @@ def parse_number(value: int | float | str) -> int | float | str:
 def normalize_purchase_entry_row(
     *,
     name: str,
+    vendor: str,
     spec: str,
     quantity: int | float | str,
+    purchase_count: int | float | str,
     cost: int | float | str,
     wholesale: int | float | str,
     retail: int | float | str,
-) -> tuple[str, str, float | None, float | None, float | None, float | None] | None:
+) -> tuple[str, str, str, float | None, float | None, float | None, float | None, float | None] | None:
     normalized_name = name.strip()
     if not normalized_name:
         return None
 
     normalized_quantity = parse_number(quantity)
+    normalized_purchase_count = parse_number(purchase_count)
     normalized_cost = parse_number(cost)
     normalized_wholesale = parse_number(wholesale)
     normalized_retail = parse_number(retail)
 
     return (
         normalized_name,
+        vendor.strip(),
         normalize_text(spec),
         float(normalized_quantity) if isinstance(normalized_quantity, (int, float)) else None,
+        float(normalized_purchase_count) if isinstance(normalized_purchase_count, (int, float)) else None,
         float(normalized_cost) if isinstance(normalized_cost, (int, float)) else None,
         float(normalized_wholesale) if isinstance(normalized_wholesale, (int, float)) else None,
         float(normalized_retail) if isinstance(normalized_retail, (int, float)) else None,
@@ -186,8 +204,10 @@ def fetch_purchase_entry(connection: sqlite3.Connection, entry_id: int) -> sqlit
         """
         SELECT id,
                name,
+               vendor,
                spec,
                quantity,
+               purchase_count,
                cost,
                wholesale,
                retail,
@@ -212,8 +232,10 @@ def fetch_purchase_entries_by_ids(
         SELECT id,
                date(datetime(created_at, '+9 hours')) AS created_date,
                name,
+               vendor,
                spec,
                quantity,
+               purchase_count,
                cost,
                wholesale,
                retail
@@ -233,7 +255,21 @@ def build_purchase_workbook(rows: list[dict[str, Any]]) -> BytesIO:
     sheet.title = "Plant Labels"
 
     header = ["식물 이름", "가격", "매수"]
+    header = [
+        "ID",
+        "저장날짜",
+        "식물 이름",
+        "매입처",
+        "규격",
+        "수량",
+        "매수",
+        "단가",
+        "도매가",
+        "소매가",
+    ]
     sheet.append(header)
+    sheet.delete_rows(1, 1)
+    sheet.append(["식물 이름", "가격", "매수"])
 
     for cell in sheet[1]:
         cell.font = Font(bold=True)
@@ -243,13 +279,10 @@ def build_purchase_workbook(rows: list[dict[str, Any]]) -> BytesIO:
         if not name:
             continue
 
-        quantity = parse_number(row.get("quantity", ""))
+        quantity = parse_number(row.get("purchase_count", row.get("quantity", "")))
         retail = parse_number(row.get("retail", ""))
-        divisor = parse_spec_divisor(str(row.get("spec", "")))
         export_quantity: int | float | str = quantity
-        if divisor and isinstance(quantity, (int, float)):
-            export_quantity = int(round(quantity / divisor))
-        elif isinstance(quantity, float):
+        if isinstance(quantity, float):
             export_quantity = int(round(quantity))
 
         sheet.append([name, retail, export_quantity])
@@ -279,6 +312,10 @@ def build_purchase_ledger_workbook(rows: list[dict[str, Any]]) -> BytesIO:
 
     header = ["ID", "저장날짜", "식물 이름", "규격", "수량", "단가", "도매가", "소매가"]
     sheet.append(header)
+    sheet.delete_rows(1, 1)
+    sheet.append(
+        ["ID", "저장날짜", "식물 이름", "매입처", "규격", "수량", "매수", "단가", "도매가", "소매가"]
+    )
 
     for cell in sheet[1]:
         cell.font = Font(bold=True)
@@ -289,8 +326,10 @@ def build_purchase_ledger_workbook(rows: list[dict[str, Any]]) -> BytesIO:
                 row.get("id", ""),
                 row.get("created_date", ""),
                 row.get("name", ""),
+                row.get("vendor", ""),
                 row.get("spec", ""),
                 parse_number(row.get("quantity", "")),
+                parse_number(row.get("purchase_count", "")),
                 parse_number(row.get("cost", "")),
                 parse_number(row.get("wholesale", "")),
                 parse_number(row.get("retail", "")),
@@ -300,16 +339,18 @@ def build_purchase_ledger_workbook(rows: list[dict[str, Any]]) -> BytesIO:
     sheet.column_dimensions["A"].width = 10
     sheet.column_dimensions["B"].width = 14
     sheet.column_dimensions["C"].width = 28
-    sheet.column_dimensions["D"].width = 10
+    sheet.column_dimensions["D"].width = 18
     sheet.column_dimensions["E"].width = 10
-    sheet.column_dimensions["F"].width = 14
-    sheet.column_dimensions["G"].width = 14
+    sheet.column_dimensions["F"].width = 10
+    sheet.column_dimensions["G"].width = 10
     sheet.column_dimensions["H"].width = 14
+    sheet.column_dimensions["I"].width = 14
+    sheet.column_dimensions["J"].width = 14
 
-    for row in sheet.iter_rows(min_row=2, min_col=5, max_col=8):
+    for row in sheet.iter_rows(min_row=2, min_col=6, max_col=10):
         for cell in row:
             if isinstance(cell.value, (int, float)):
-                if cell.column == 5:
+                if cell.column in (6, 7):
                     cell.number_format = "0"
                 else:
                     cell.number_format = '#,##0"원"'
@@ -378,11 +419,13 @@ def parse_ocr_rows(lines: list[dict[str, Any]]) -> list[dict[str, int | str]]:
         items.append(
             {
                 "name": name,
+                "vendor": "",
                 "spec": spec,
                 "cost": unit_price,
-                "wholesale": round(unit_price * 1.3),
-                "retail": round(unit_price * 1.3) * 2,
+                "wholesale": unit_price,
+                "retail": unit_price * 2,
                 "quantity": quantity,
+                "purchase_count": quantity,
             }
         )
 
@@ -568,13 +611,17 @@ async def export_xlsx(rows: list[PlantRow]) -> Response:
 
 @app.post("/api/purchase-ledger")
 async def save_purchase_ledger(rows: list[PlantRow]) -> JSONResponse:
-    normalized_rows: list[tuple[str, str, float | None, float | None, float | None, float | None]] = []
+    normalized_rows: list[
+        tuple[str, str, str, float | None, float | None, float | None, float | None, float | None]
+    ] = []
 
     for row in rows:
         normalized_row = normalize_purchase_entry_row(
             name=row.name,
+            vendor=row.vendor,
             spec=row.spec,
             quantity=row.quantity,
+            purchase_count=row.purchase_count,
             cost=row.cost,
             wholesale=row.wholesale,
             retail=row.retail,
@@ -591,8 +638,8 @@ async def save_purchase_ledger(rows: list[PlantRow]) -> JSONResponse:
     with sqlite3.connect(DB_PATH) as connection:
         connection.executemany(
             """
-            INSERT INTO purchase_entries (name, spec, quantity, cost, wholesale, retail)
-            VALUES (?, ?, ?, ?, ?, ?)
+            INSERT INTO purchase_entries (name, vendor, spec, quantity, purchase_count, cost, wholesale, retail)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """,
             normalized_rows,
         )
@@ -611,8 +658,10 @@ async def save_purchase_ledger(rows: list[PlantRow]) -> JSONResponse:
 async def update_purchase_ledger(entry_id: int, row: PurchaseLedgerRowUpdate) -> JSONResponse:
     normalized_row = normalize_purchase_entry_row(
         name=row.name,
+        vendor=row.vendor,
         spec=row.spec,
         quantity=row.quantity,
+        purchase_count=row.purchase_count,
         cost=row.cost,
         wholesale=row.wholesale,
         retail=row.retail,
@@ -628,7 +677,7 @@ async def update_purchase_ledger(entry_id: int, row: PurchaseLedgerRowUpdate) ->
         cursor = connection.execute(
             """
             UPDATE purchase_entries
-            SET name = ?, spec = ?, quantity = ?, cost = ?, wholesale = ?, retail = ?
+            SET name = ?, vendor = ?, spec = ?, quantity = ?, purchase_count = ?, cost = ?, wholesale = ?, retail = ?
             WHERE id = ?
             """,
             (*normalized_row, entry_id),
@@ -695,7 +744,7 @@ def build_purchase_ledger_query(
 
     query = (
         """
-        SELECT id, name, spec, quantity, cost, wholesale, retail,
+        SELECT id, name, vendor, spec, quantity, purchase_count, cost, wholesale, retail,
                date(datetime(created_at, '+9 hours')) AS created_date
         FROM purchase_entries
         """
@@ -735,8 +784,10 @@ async def export_purchase_ledger(
             SELECT id,
                    date(datetime(created_at, '+9 hours')) AS created_date,
                    name,
+                   vendor,
                    spec,
                    quantity,
+                   purchase_count,
                    cost,
                    wholesale,
                    retail
@@ -783,5 +834,36 @@ async def export_selected_purchase_ledger(selection: PurchaseLedgerExportSelecti
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         headers={
             "Content-Disposition": 'attachment; filename="purchase-ledger-selection.xlsx"'
+        },
+    )
+
+
+@app.post("/api/purchase-ledger/export/selected-labels")
+async def export_selected_purchase_labels(selection: PurchaseLedgerExportSelection) -> Response:
+    entry_ids = [entry_id for entry_id in selection.ids if isinstance(entry_id, int)]
+    if not entry_ids:
+        return Response(
+            content="?좏깮????ぉ???놁뒿?덈떎.".encode("utf-8"),
+            media_type="text/plain; charset=utf-8",
+            status_code=400,
+        )
+
+    with sqlite3.connect(DB_PATH) as connection:
+        rows = fetch_purchase_entries_by_ids(connection, entry_ids)
+
+    if not rows:
+        return Response(
+            content="?대낫????ぉ??李얠? 紐삵뻽?듬땲??".encode("utf-8"),
+            media_type="text/plain; charset=utf-8",
+            status_code=404,
+        )
+
+    buffer = build_purchase_workbook([dict(row) for row in rows])
+
+    return Response(
+        content=buffer.getvalue(),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={
+            "Content-Disposition": 'attachment; filename="plant-labels-selection.xlsx"'
         },
     )
