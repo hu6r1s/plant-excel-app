@@ -5,3 +5,5 @@ app/data/*
 build/*
 dist/*
 venv/
+*.log
+*.db
