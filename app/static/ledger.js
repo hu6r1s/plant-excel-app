@@ -4,6 +4,7 @@ const refreshButton = document.querySelector("#refresh-ledger-btn");
 const refreshLabel = document.querySelector("#refresh-ledger-label");
 const refreshSpinner = document.querySelector("#refresh-ledger-spinner");
 const nameInput = document.querySelector("#ledger-name");
+const categoryFilterSelect = document.querySelector("#ledger-category");
 const sortSelect = document.querySelector("#ledger-sort");
 const directionSelect = document.querySelector("#ledger-direction");
 const clearFilterButton = document.querySelector("#clear-ledger-filter-btn");
@@ -20,6 +21,10 @@ const selectionSummary = document.querySelector("#selection-summary");
 const selectAllLedgerCheckbox = document.querySelector("#select-all-ledger");
 
 const PRICE_FIELDS = ["cost", "wholesale", "retail"];
+const CATEGORY_LABELS = {
+  plant: "\uC2DD\uBB3C",
+  material: "\uC790\uC7AC",
+};
 
 let searchDebounceTimer = null;
 let currentItems = [];
@@ -79,10 +84,35 @@ const formatPriceDisplay = (value) =>
 const calculateRetailFromWholesale = (wholesale) =>
   Math.round(Number(wholesale || 0) * 2);
 
+const normalizeCategory = (value, fallback = "plant") => {
+  const candidate = String(value ?? "").trim().toLowerCase();
+  if (candidate === "plant" || candidate === "material") {
+    return candidate;
+  }
+
+  return fallback;
+};
+
+const getCategoryLabel = (value) => CATEGORY_LABELS[normalizeCategory(value)] || CATEGORY_LABELS.plant;
+
+const buildCategoryOptions = (selectedCategory) => {
+  const normalized = normalizeCategory(selectedCategory);
+  return Object.entries(CATEGORY_LABELS)
+    .map(
+      ([value, label]) =>
+        `<option value="${value}" ${value === normalized ? "selected" : ""}>${label}</option>`
+    )
+    .join("");
+};
+
 const buildQueryString = () => {
   const params = new URLSearchParams();
   if (nameInput.value.trim()) {
     params.set("name", nameInput.value.trim());
+  }
+
+  if (categoryFilterSelect && categoryFilterSelect.value !== "all") {
+    params.set("category", normalizeCategory(categoryFilterSelect.value));
   }
 
   params.set("sort", sortSelect.value || "date");
@@ -125,7 +155,7 @@ const renderLedgerRows = (items) => {
   if (!items.length) {
     ledgerBody.innerHTML = `
       <tr>
-        <td colspan="12" class="empty-cell">저장된 매입 데이터가 없습니다.</td>
+        <td colspan="13" class="empty-cell">저장된 매입 데이터가 없습니다.</td>
       </tr>
     `;
     updateSelectionSummary();
@@ -145,6 +175,11 @@ const renderLedgerRows = (items) => {
           } />
         </td>
         <td>${entryId}</td>
+        <td>
+          <select data-field="category">
+            ${buildCategoryOptions(item.category)}
+          </select>
+        </td>
         <td>${escapeHtml(item.created_date || "-")}</td>
         <td><input data-field="name" type="text" value="${escapeHtml(item.name || "")}" /></td>
         <td><input data-field="vendor" type="text" value="${escapeHtml(item.vendor || "")}" /></td>
@@ -177,6 +212,7 @@ const renderLedgerRows = (items) => {
           } />
         </td>
         <td>${entryId}</td>
+        <td>${escapeHtml(getCategoryLabel(item.category))}</td>
         <td>${escapeHtml(item.created_date || "-")}</td>
         <td>${escapeHtml(item.name || "-")}</td>
         <td>${escapeHtml(item.vendor || "-")}</td>
@@ -217,6 +253,7 @@ const loadLedger = async () => {
     currentItems = (result.items || []).map((item) => ({
       ...item,
       id: Number(item.id),
+      category: normalizeCategory(item.category),
     }));
 
     if (editingId !== null && !currentItems.some((item) => item.id === editingId)) {
@@ -418,8 +455,8 @@ const deleteEntry = async (entryId) => {
 
 const collectRowPayload = (rowElement) => {
   const payload = {};
-  rowElement.querySelectorAll("input[data-field]").forEach((input) => {
-    payload[input.dataset.field] = input.value.trim();
+  rowElement.querySelectorAll("[data-field]").forEach((field) => {
+    payload[field.dataset.field] = String(field.value ?? "").trim();
   });
   return payload;
 };
@@ -460,6 +497,10 @@ nameInput.addEventListener("input", () => {
   scheduleLedgerReload();
 });
 
+categoryFilterSelect?.addEventListener("change", () => {
+  loadLedger();
+});
+
 sortSelect.addEventListener("change", () => {
   loadLedger();
 });
@@ -470,6 +511,9 @@ directionSelect.addEventListener("change", () => {
 
 clearFilterButton.addEventListener("click", () => {
   nameInput.value = "";
+  if (categoryFilterSelect) {
+    categoryFilterSelect.value = "all";
+  }
   sortSelect.value = "date";
   directionSelect.value = "desc";
   editingId = null;

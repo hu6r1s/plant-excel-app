@@ -220,7 +220,8 @@ h2 {
   background: rgba(223, 234, 216, 0.55);
 }
 
-.entry-table input {
+.entry-table input,
+.entry-table select {
   width: 100%;
   border: 1px solid rgba(72, 79, 56, 0.14);
   border-radius: 10px;
@@ -237,7 +238,8 @@ h2 {
   border-radius: 4px;
 }
 
-.entry-table input:focus {
+.entry-table input:focus,
+.entry-table select:focus {
   outline: 2px solid rgba(44, 106, 75, 0.18);
   border-color: rgba(44, 106, 75, 0.26);
 }
@@ -252,7 +254,7 @@ h2 {
 }
 
 .entry-table-ledger {
-  min-width: 1110px;
+  min-width: 1190px;
 }
 
 .entry-table .col-check {
@@ -265,6 +267,10 @@ h2 {
 
 .entry-table .col-date {
   width: 104px;
+}
+
+.entry-table .col-category {
+  width: 88px;
 }
 
 .entry-table .col-name {
@@ -310,9 +316,53 @@ h2 {
   gap: 6px;
 }
 
+.mode-switcher {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.mode-caption {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--muted);
+}
+
+.mode-toggle {
+  display: inline-flex;
+  gap: 6px;
+  width: fit-content;
+  padding: 4px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.7);
+}
+
+.mode-toggle .btn {
+  min-width: 88px;
+  border-color: transparent;
+  background: transparent;
+}
+
+.mode-toggle .btn:hover {
+  transform: none;
+}
+
+.mode-toggle .btn.is-active {
+  background: linear-gradient(180deg, var(--accent), var(--accent-strong));
+  color: #fff;
+}
+
+.mode-description {
+  margin: 0;
+  font-size: 13px;
+  color: var(--muted);
+  font-weight: 600;
+}
+
 .filter-grid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(180px, 260px));
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
   gap: 12px;
   margin-bottom: 14px;
 }

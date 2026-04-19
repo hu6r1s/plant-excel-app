@@ -44,6 +44,14 @@
             <div>
               <p class="section-kicker">Bulk Entry</p>
               <h2>입력 테이블</h2>
+              <div class="mode-switcher">
+                <span class="mode-caption">&#49352; &#54665; &#44592;&#48376;&#44050;</span>
+                <div class="mode-toggle" role="group" aria-label="entry mode">
+                  <button id="mode-plant-btn" class="btn" type="button">&#49885;&#47932;</button>
+                  <button id="mode-material-btn" class="btn" type="button">&#51088;&#51116;</button>
+                </div>
+                <p id="entry-mode-label" class="mode-description"></p>
+              </div>
             </div>
             <div class="toolbar">
               <button id="add-row-btn" class="btn primary" type="button">행 추가</button>
@@ -70,7 +78,7 @@
               <thead>
                 <tr>
                   <th class="check-col">선택</th>
-                  <th>식물 이름</th>
+                  <th>품목명</th>
                   <th>매입처</th>
                   <th>규격</th>
                   <th>수량</th>
@@ -112,7 +120,7 @@
         <td class="check-col">
           <input type="checkbox" class="row-select" />
         </td>
-        <td><input data-field="name" type="text" placeholder="식물 이름" /></td>
+        <td><input data-field="name" type="text" placeholder="품목명" /></td>
         <td><input data-field="vendor" type="text" placeholder="매입처" /></td>
         <td><input data-field="spec" type="text" placeholder="예: 12" /></td>
         <td><input data-field="quantity" type="number" min="1" step="1" value="" /></td>

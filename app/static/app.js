@@ -1,5 +1,10 @@
 const STORAGE_KEY = "plant-label-helper-rows";
+const MODE_STORAGE_KEY = "plant-label-helper-mode";
 const PRICE_FIELDS = ["cost", "wholesale", "retail"];
+const CATEGORY_LABELS = {
+  plant: "\uC2DD\uBB3C",
+  material: "\uC790\uC7AC",
+};
 
 const calculateRetailFromWholesale = (wholesale) =>
   Math.round(Number(wholesale || 0) * 2);
@@ -28,6 +33,7 @@ const sampleRows = [
 ];
 
 const state = {
+  currentMode: "plant",
   rows: [],
 };
 
@@ -44,6 +50,9 @@ const exportSpinner = document.querySelector("#export-spinner");
 const ocrButton = document.querySelector("#ocr-preview-btn");
 const ocrButtonLabel = document.querySelector("#ocr-btn-label");
 const ocrSpinner = document.querySelector("#ocr-spinner");
+const modePlantButton = document.querySelector("#mode-plant-btn");
+const modeMaterialButton = document.querySelector("#mode-material-btn");
+const entryModeLabel = document.querySelector("#entry-mode-label");
 
 const parsePriceInput = (value) => {
   if (value === "" || value === null || value === undefined) {
@@ -84,7 +93,25 @@ const normalizeCountValue = (value) => {
   return Number.isNaN(parsed) ? "" : parsed;
 };
 
-const createEmptyRow = () => ({
+const normalizeCategory = (value, fallback = "plant") => {
+  const candidate = String(value ?? "").trim().toLowerCase();
+  if (candidate === "plant" || candidate === "material") {
+    return candidate;
+  }
+
+  return fallback;
+};
+
+const isRowBlank = (row = {}) =>
+  !String(row.name ?? "").trim() &&
+  !String(row.vendor ?? "").trim() &&
+  !String(row.spec ?? "").trim() &&
+  [row.quantity, row.purchase_count, row.cost, row.wholesale, row.retail].every(
+    (value) => value === "" || value === null || value === undefined
+  );
+
+const createEmptyRow = (category = state.currentMode) => ({
+  category: normalizeCategory(category, state.currentMode),
   name: "",
   vendor: "",
   spec: "",
@@ -95,12 +122,13 @@ const createEmptyRow = () => ({
   retail: "",
 });
 
-const normalizeRow = (row = {}) => {
+const normalizeRow = (row = {}, fallbackCategory = "plant") => {
   const cost = parsePriceInput(row.cost ?? "");
   const wholesale = parsePriceInput(row.wholesale ?? "");
   const purchaseCount = row.purchase_count ?? row.quantity ?? "";
 
   return {
+    category: normalizeCategory(row.category, fallbackCategory),
     name: row.name ?? "",
     vendor: row.vendor ?? "",
     spec: row.spec ?? "",
@@ -117,6 +145,47 @@ const normalizeRow = (row = {}) => {
   };
 };
 
+const saveCurrentMode = () => {
+  localStorage.setItem(MODE_STORAGE_KEY, state.currentMode);
+};
+
+const loadCurrentMode = () => {
+  try {
+    state.currentMode = normalizeCategory(localStorage.getItem(MODE_STORAGE_KEY), "plant");
+  } catch (error) {
+    console.error("Failed to parse saved mode", error);
+    state.currentMode = "plant";
+  }
+};
+
+const applyCurrentModeToBlankRows = () => {
+  state.rows = state.rows.map((row) =>
+    isRowBlank(row) ? { ...row, category: state.currentMode } : row
+  );
+};
+
+const updateModeControls = () => {
+  const isPlantMode = state.currentMode === "plant";
+
+  modePlantButton?.classList.toggle("is-active", isPlantMode);
+  modeMaterialButton?.classList.toggle("is-active", !isPlantMode);
+  modePlantButton?.setAttribute("aria-pressed", String(isPlantMode));
+  modeMaterialButton?.setAttribute("aria-pressed", String(!isPlantMode));
+
+  if (entryModeLabel) {
+    entryModeLabel.textContent = `\uC0C8 \uD589 \uAE30\uBCF8\uAC12: ${CATEGORY_LABELS[state.currentMode]}`;
+  }
+};
+
+const setCurrentMode = (mode) => {
+  state.currentMode = normalizeCategory(mode, state.currentMode);
+  applyCurrentModeToBlankRows();
+  saveCurrentMode();
+  saveRows();
+  updateModeControls();
+  renderRows();
+};
+
 const saveRows = () => {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state.rows));
 };
@@ -125,14 +194,15 @@ const loadRows = () => {
   try {
     const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || "[]");
     if (Array.isArray(saved) && saved.length) {
-      state.rows = saved.map(normalizeRow);
+      state.rows = saved.map((row) => normalizeRow(row, "plant"));
+      applyCurrentModeToBlankRows();
       return;
     }
   } catch (error) {
     console.error("Failed to parse saved rows", error);
   }
 
-  state.rows = [createEmptyRow()];
+  state.rows = [createEmptyRow(state.currentMode)];
 };
 
 const updateSummary = () => {
@@ -225,6 +295,8 @@ const renderRows = () => {
 
   state.rows.forEach((row, index) => {
     const fragment = rowTemplate.content.cloneNode(true);
+    const rowElement = fragment.querySelector("tr");
+    rowElement.dataset.category = row.category;
     const inputs = fragment.querySelectorAll("input[data-field]");
 
     inputs.forEach((input) => {
@@ -254,8 +326,8 @@ const renderRows = () => {
   updateSummary();
 };
 
-const addRow = (row = createEmptyRow()) => {
-  state.rows.push(normalizeRow(row));
+const addRow = (row = createEmptyRow(state.currentMode)) => {
+  state.rows.push(normalizeRow(row, state.currentMode));
   saveRows();
   renderRows();
 };
@@ -285,7 +357,7 @@ const deleteSelectedRows = () => {
 
   state.rows = state.rows.filter((_, index) => !selected.includes(index));
   if (!state.rows.length) {
-    state.rows = [createEmptyRow()];
+    state.rows = [createEmptyRow(state.currentMode)];
   }
 
   saveRows();
@@ -293,33 +365,26 @@ const deleteSelectedRows = () => {
 };
 
 const fillSampleRows = () => {
-  state.rows = sampleRows.map(normalizeRow);
+  state.rows = sampleRows.map((row) => normalizeRow(row, state.currentMode));
   saveRows();
   renderRows();
 };
 
 const clearAllRows = () => {
-  state.rows = [createEmptyRow()];
+  state.rows = [createEmptyRow(state.currentMode)];
   saveRows();
   renderRows();
 };
 
 const appendImportedRows = (rows) => {
-  const normalized = rows.map(normalizeRow).filter((row) => row.name.trim());
+  const normalized = rows
+    .map((row) => normalizeRow(row, state.currentMode))
+    .filter((row) => row.name.trim());
   if (!normalized.length) {
     return 0;
   }
 
-  const hasOnlyEmptyStarter =
-    state.rows.length === 1 &&
-    !state.rows[0].name &&
-    !state.rows[0].vendor &&
-    !state.rows[0].spec &&
-    !state.rows[0].quantity &&
-    !state.rows[0].purchase_count &&
-    !state.rows[0].cost &&
-    !state.rows[0].wholesale &&
-    !state.rows[0].retail;
+  const hasOnlyEmptyStarter = state.rows.length === 1 && isRowBlank(state.rows[0]);
 
   state.rows = hasOnlyEmptyStarter ? normalized : [...state.rows, ...normalized];
   saveRows();
@@ -488,6 +553,14 @@ document.querySelector("#copy-tsv-btn").addEventListener("click", () => {
 document.querySelector("#ocr-preview-btn").addEventListener("click", () => {
   requestOcrPreview();
 });
+modePlantButton?.addEventListener("click", () => {
+  setCurrentMode("plant");
+});
+modeMaterialButton?.addEventListener("click", () => {
+  setCurrentMode("material");
+});
 
+loadCurrentMode();
 loadRows();
+updateModeControls();
 renderRows();

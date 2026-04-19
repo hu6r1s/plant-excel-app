@@ -43,7 +43,15 @@
 
           <div class="filter-grid">
             <label class="field-block">
-              <span>식물 이름</span>
+              <span>&#52852;&#53580;&#44256;&#47532;</span>
+              <select id="ledger-category">
+                <option value="all">&#51204;&#52404;</option>
+                <option value="plant">&#49885;&#47932;</option>
+                <option value="material">&#51088;&#51116;</option>
+              </select>
+            </label>
+            <label class="field-block">
+              <span>품목명</span>
               <input id="ledger-name" type="text" placeholder="이름 일부로 바로 검색" />
             </label>
             <label class="field-block">
@@ -94,6 +102,7 @@
               <colgroup>
                 <col class="col-check" />
                 <col class="col-id" />
+                <col class="col-category" />
                 <col class="col-date" />
                 <col class="col-name" />
                 <col class="col-vendor" />
@@ -111,8 +120,9 @@
                     <input id="select-all-ledger" type="checkbox" aria-label="현재 목록 전체 선택" />
                   </th>
                   <th>ID</th>
+                  <th>&#52852;&#53580;&#44256;&#47532;</th>
                   <th>저장날짜</th>
-                  <th>식물 이름</th>
+                  <th>품목명</th>
                   <th>매입처</th>
                   <th>규격</th>
                   <th>수량</th>
