@@ -6,4 +6,4 @@ build/*
 dist/*
 venv/
 *.log
-*.db
+data/*

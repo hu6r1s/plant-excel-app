@@ -9,6 +9,9 @@ const CATEGORY_LABELS = {
 const calculateRetailFromWholesale = (wholesale) =>
   Math.round(Number(wholesale || 0) * 2);
 
+const calculateWholesaleFromCost = (cost) =>
+  Math.round(Number(cost || 0) * 1.3);
+
 const sampleRows = [
   {
     name: "몬스테라 델리시오사",
@@ -124,7 +127,12 @@ const createEmptyRow = (category = state.currentMode) => ({
 
 const normalizeRow = (row = {}, fallbackCategory = "plant") => {
   const cost = parsePriceInput(row.cost ?? "");
-  const wholesale = parsePriceInput(row.wholesale ?? "");
+  const wholesale =
+    row.wholesale === "" || row.wholesale === null || row.wholesale === undefined
+      ? cost === ""
+        ? ""
+        : calculateWholesaleFromCost(cost)
+      : parsePriceInput(row.wholesale);
   const purchaseCount = row.purchase_count ?? row.quantity ?? "";
 
   return {
@@ -229,7 +237,13 @@ const syncCalculatedFields = (index) => {
 
 const updateRowInState = (index, field, value) => {
   if (field === "cost") {
-    state.rows[index].cost = parsePriceInput(value);
+    const cost = parsePriceInput(value);
+    const wholesale = cost === "" ? "" : calculateWholesaleFromCost(cost);
+    state.rows[index].cost = cost;
+    state.rows[index].wholesale = wholesale;
+    state.rows[index].retail =
+      wholesale === "" ? "" : calculateRetailFromWholesale(wholesale);
+    syncCalculatedFields(index);
   } else if (field === "wholesale") {
     const wholesale = parsePriceInput(value);
     state.rows[index].wholesale = wholesale;

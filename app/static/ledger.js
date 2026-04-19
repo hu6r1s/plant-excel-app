@@ -84,6 +84,9 @@ const formatPriceDisplay = (value) =>
 const calculateRetailFromWholesale = (wholesale) =>
   Math.round(Number(wholesale || 0) * 2);
 
+const calculateWholesaleFromCost = (cost) =>
+  Math.round(Number(cost || 0) * 1.3);
+
 const normalizeCategory = (value, fallback = "plant") => {
   const candidate = String(value ?? "").trim().toLowerCase();
   if (candidate === "plant" || candidate === "material") {
@@ -470,8 +473,20 @@ const setFormattedPrice = (input, value) => {
 };
 
 const syncLedgerPriceFields = (rowElement, sourceField) => {
+  const costInput = rowElement.querySelector('[data-field="cost"]');
   const wholesaleInput = rowElement.querySelector('[data-field="wholesale"]');
   const retailInput = rowElement.querySelector('[data-field="retail"]');
+
+  if (sourceField === "cost" && costInput) {
+    const cost = parsePriceInput(costInput.value);
+    const wholesale = cost === "" ? "" : calculateWholesaleFromCost(cost);
+    setFormattedPrice(wholesaleInput, wholesale);
+    setFormattedPrice(
+      retailInput,
+      wholesale === "" ? "" : calculateRetailFromWholesale(wholesale)
+    );
+    return;
+  }
 
   if (sourceField === "wholesale" && wholesaleInput) {
     const wholesale = parsePriceInput(wholesaleInput.value);
@@ -570,7 +585,7 @@ ledgerBody.addEventListener("input", (event) => {
     return;
   }
 
-  if (input.dataset.field === "wholesale") {
+  if (input.dataset.field === "cost" || input.dataset.field === "wholesale") {
     syncLedgerPriceFields(rowElement, input.dataset.field);
   }
 });
