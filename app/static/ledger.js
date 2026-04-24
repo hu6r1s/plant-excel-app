@@ -24,6 +24,7 @@ const selectAllLedgerCheckbox = document.querySelector("#select-all-ledger");
 const backupDatabaseButton = document.querySelector("#backup-database-btn");
 const backupDatabaseLabel = document.querySelector("#backup-database-label");
 const backupDatabaseSpinner = document.querySelector("#backup-database-spinner");
+const vendorSuggestionList = document.querySelector("#ledger-vendor-suggestions");
 
 const PRICE_FIELDS = ["cost", "wholesale", "retail"];
 const CATEGORY_LABELS = {
@@ -37,6 +38,7 @@ let editingId = null;
 let selectedIds = new Set();
 let activeLedgerRequestId = 0;
 let ledgerRequestController = null;
+let vendorSuggestions = [];
 
 const escapeHtml = (value) =>
   String(value ?? "")
@@ -151,6 +153,107 @@ const loadLedgerCache = () => {
   }
 };
 
+const buildVendorSuggestionValues = (vendors = []) =>
+  [...new Set(vendors.map((vendor) => String(vendor ?? "").trim()).filter(Boolean))].sort((left, right) =>
+    left.localeCompare(right, "ko-KR", { sensitivity: "base", numeric: true })
+  );
+
+const updateVendorSuggestions = (vendors) => {
+  vendorSuggestions = buildVendorSuggestionValues(vendors);
+
+  if (!vendorSuggestionList) {
+    return;
+  }
+
+  vendorSuggestionList.innerHTML = "";
+  vendorSuggestions.forEach((vendor) => {
+    const option = document.createElement("option");
+    option.value = vendor;
+    vendorSuggestionList.appendChild(option);
+  });
+};
+
+const syncVendorSuggestionsFromItems = () => {
+  updateVendorSuggestions([
+    ...vendorSuggestions,
+    ...allItems.map((item) => item.vendor),
+  ]);
+};
+
+const loadVendorSuggestions = async () => {
+  syncVendorSuggestionsFromItems();
+
+  try {
+    const response = await fetch("/api/purchase-ledger/vendors");
+    const result = await response.json();
+    if (!response.ok) {
+      throw new Error(result.message || "vendor suggestion fetch failed");
+    }
+
+    updateVendorSuggestions([
+      ...(result.items || []),
+      ...allItems.map((item) => item.vendor),
+    ]);
+  } catch (error) {
+    console.error(error);
+  }
+};
+
+const findLedgerItem = (entryId) =>
+  allItems.find((item) => Number(item.id) === Number(entryId)) || null;
+
+const reconcileSelectedIds = () => {
+  const validIds = new Set(allItems.map((item) => Number(item.id)));
+  selectedIds = new Set([...selectedIds].filter((id) => validIds.has(id)));
+};
+
+const replaceLedgerItemLocally = (item) => {
+  const normalizedItems = normalizeLedgerItems([item]);
+  const normalizedItem = normalizedItems[0];
+  if (!normalizedItem) {
+    return;
+  }
+
+  let replaced = false;
+  allItems = allItems.map((currentItem) => {
+    if (Number(currentItem.id) !== Number(normalizedItem.id)) {
+      return currentItem;
+    }
+
+    replaced = true;
+    return normalizedItem;
+  });
+
+  if (!replaced) {
+    allItems = [normalizedItem, ...allItems];
+  }
+
+  reconcileSelectedIds();
+  saveLedgerCache();
+  syncVendorSuggestionsFromItems();
+  applyLocalFilters({ keepFeedback: true });
+};
+
+const removeLedgerItemLocally = (entryId) => {
+  const normalizedId = Number(entryId);
+  allItems = allItems.filter((item) => Number(item.id) !== normalizedId);
+  selectedIds.delete(normalizedId);
+  reconcileSelectedIds();
+  saveLedgerCache();
+  syncVendorSuggestionsFromItems();
+  applyLocalFilters({ keepFeedback: true });
+};
+
+const buildOptimisticLedgerItem = (entryId, payload, existingItem) => ({
+  ...existingItem,
+  ...payload,
+  id: Number(entryId),
+  category: normalizeCategory(payload.category, existingItem?.category || "plant"),
+  cost: parsePriceInput(payload.cost),
+  wholesale: parsePriceInput(payload.wholesale),
+  retail: parsePriceInput(payload.retail),
+});
+
 const compareLedgerItems = (left, right) => {
   const sortKey = (sortSelect?.value || "date").toLowerCase();
   const directionMultiplier = (directionSelect?.value || "desc").toLowerCase() === "asc" ? 1 : -1;
@@ -249,7 +352,7 @@ const renderLedgerRows = (items) => {
         </td>
         <td>${escapeHtml(item.created_date || "-")}</td>
         <td><input data-field="name" type="text" value="${escapeHtml(item.name || "")}" /></td>
-        <td><input data-field="vendor" type="text" value="${escapeHtml(item.vendor || "")}" /></td>
+        <td><input data-field="vendor" type="text" list="ledger-vendor-suggestions" autocomplete="off" value="${escapeHtml(item.vendor || "")}" /></td>
         <td><input data-field="spec" type="text" value="${escapeHtml(item.spec || "")}" /></td>
         <td><input data-field="quantity" type="text" value="${escapeHtml(formatEditableValue(item.quantity))}" /></td>
         <td><input data-field="purchase_count" type="text" value="${escapeHtml(
@@ -350,6 +453,7 @@ const loadLedgerFromServer = async ({ silent = false } = {}) => {
     const validIds = new Set(allItems.map((item) => Number(item.id)));
     selectedIds = new Set([...selectedIds].filter((id) => validIds.has(id)));
     saveLedgerCache();
+    syncVendorSuggestionsFromItems();
     applyLocalFilters({ keepFeedback: silent });
 
     if (!silent) {
@@ -551,24 +655,36 @@ const backupDatabase = async () => {
 };
 
 const updateEntry = async (entryId, payload) => {
-  ledgerFeedback.textContent = "매입 내역을 저장하고 있습니다.";
-
-  const response = await fetch(`/api/purchase-ledger/${entryId}`, {
-    method: "PUT",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify(payload),
-  });
-
-  const result = await response.json();
-  if (!response.ok) {
-    throw new Error(result.message || "update failed");
+  const existingItem = findLedgerItem(entryId);
+  if (!existingItem) {
+    throw new Error("수정할 매입 내역을 찾지 못했습니다.");
   }
 
   editingId = null;
-  await loadLedgerFromServer();
-  ledgerFeedback.textContent = "매입 내역을 수정했습니다.";
+  replaceLedgerItemLocally(buildOptimisticLedgerItem(entryId, payload, existingItem));
+  ledgerFeedback.textContent = "매입 내역을 저장하고 있습니다.";
+
+  try {
+    const response = await fetch(`/api/purchase-ledger/${entryId}`, {
+      method: "PUT",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(payload),
+    });
+
+    const result = await response.json();
+    if (!response.ok) {
+      throw new Error(result.message || "update failed");
+    }
+
+    replaceLedgerItemLocally(result.item);
+    ledgerFeedback.textContent = "매입 내역을 수정했습니다.";
+  } catch (error) {
+    editingId = entryId;
+    replaceLedgerItemLocally(existingItem);
+    throw error;
+  }
 };
 
 const deleteEntry = async (entryId) => {
@@ -577,24 +693,38 @@ const deleteEntry = async (entryId) => {
     return;
   }
 
+  const existingItem = findLedgerItem(entryId);
+  if (!existingItem) {
+    throw new Error("삭제할 매입 내역을 찾지 못했습니다.");
+  }
+
+  const wasEditing = editingId === entryId;
+  const wasSelected = selectedIds.has(Number(entryId));
+  editingId = null;
+  removeLedgerItemLocally(entryId);
   ledgerFeedback.textContent = "매입 내역을 삭제하고 있습니다.";
 
-  const response = await fetch(`/api/purchase-ledger/${entryId}`, {
-    method: "DELETE",
-  });
+  try {
+    const response = await fetch(`/api/purchase-ledger/${entryId}`, {
+      method: "DELETE",
+    });
 
-  const result = await response.json();
-  if (!response.ok) {
-    throw new Error(result.message || "delete failed");
+    const result = await response.json();
+    if (!response.ok) {
+      throw new Error(result.message || "delete failed");
+    }
+
+    ledgerFeedback.textContent = "매입 내역을 삭제했습니다.";
+  } catch (error) {
+    if (wasEditing) {
+      editingId = entryId;
+    }
+    if (wasSelected) {
+      selectedIds.add(Number(entryId));
+    }
+    replaceLedgerItemLocally(existingItem);
+    throw error;
   }
-
-  selectedIds.delete(entryId);
-  if (editingId === entryId) {
-    editingId = null;
-  }
-
-  await loadLedgerFromServer();
-  ledgerFeedback.textContent = "매입 내역을 삭제했습니다.";
 };
 
 const collectRowPayload = (rowElement) => {
@@ -790,8 +920,10 @@ ledgerBody?.addEventListener("click", async (event) => {
 });
 
 allItems = loadLedgerCache();
+syncVendorSuggestionsFromItems();
 applyLocalFilters({ keepFeedback: true });
 if (allItems.length) {
   ledgerFeedback.textContent = `${allItems.length}개의 최근 목록을 먼저 표시했습니다.`;
 }
+loadVendorSuggestions();
 loadLedgerFromServer({ silent: allItems.length > 0 });

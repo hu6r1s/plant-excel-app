@@ -1417,6 +1417,30 @@ async def get_purchase_ledger(
     )
 
 
+@app.get("/api/purchase-ledger/vendors")
+async def get_purchase_ledger_vendors() -> JSONResponse:
+    connection = None
+    try:
+        connection, _mode = open_purchase_connection(force_sync=False)
+        rows = cursor_to_dicts(
+            connection.execute(
+                """
+                SELECT DISTINCT TRIM(vendor) AS vendor
+                FROM purchase_entries
+                WHERE vendor IS NOT NULL AND TRIM(vendor) <> ''
+                ORDER BY vendor COLLATE NOCASE ASC
+                """
+            )
+        )
+    except RuntimeError as error:
+        return JSONResponse({"message": str(error), "items": [], "count": 0}, status_code=500)
+    finally:
+        close_connection(connection)
+
+    vendors = [str(row.get("vendor", "")).strip() for row in rows if str(row.get("vendor", "")).strip()]
+    return JSONResponse({"items": vendors, "count": len(vendors)})
+
+
 @app.get("/api/purchase-ledger/export")
 async def export_purchase_ledger(
     name: str | None = None,

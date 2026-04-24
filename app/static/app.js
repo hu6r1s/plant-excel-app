@@ -38,6 +38,7 @@ const sampleRows = [
 const state = {
   currentMode: "plant",
   rows: [],
+  vendorSuggestions: [],
 };
 
 const entryBody = document.querySelector("#entry-body");
@@ -56,6 +57,7 @@ const ocrSpinner = document.querySelector("#ocr-spinner");
 const modePlantButton = document.querySelector("#mode-plant-btn");
 const modeMaterialButton = document.querySelector("#mode-material-btn");
 const entryModeLabel = document.querySelector("#entry-mode-label");
+const vendorSuggestionList = document.querySelector("#vendor-suggestions");
 
 const parsePriceInput = (value) => {
   if (value === "" || value === null || value === undefined) {
@@ -151,6 +153,52 @@ const normalizeRow = (row = {}, fallbackCategory = "plant") => {
           : calculateRetailFromWholesale(wholesale)
         : parsePriceInput(row.retail),
   };
+};
+
+const buildVendorSuggestionValues = (vendors = []) =>
+  [...new Set(vendors.map((vendor) => String(vendor ?? "").trim()).filter(Boolean))].sort((left, right) =>
+    left.localeCompare(right, "ko-KR", { sensitivity: "base", numeric: true })
+  );
+
+const updateVendorSuggestions = (vendors) => {
+  state.vendorSuggestions = buildVendorSuggestionValues(vendors);
+
+  if (!vendorSuggestionList) {
+    return;
+  }
+
+  vendorSuggestionList.innerHTML = "";
+  state.vendorSuggestions.forEach((vendor) => {
+    const option = document.createElement("option");
+    option.value = vendor;
+    vendorSuggestionList.appendChild(option);
+  });
+};
+
+const mergeVendorSuggestionsFromRows = () => {
+  updateVendorSuggestions([
+    ...state.vendorSuggestions,
+    ...state.rows.map((row) => row.vendor),
+  ]);
+};
+
+const loadVendorSuggestions = async () => {
+  mergeVendorSuggestionsFromRows();
+
+  try {
+    const response = await fetch("/api/purchase-ledger/vendors");
+    const result = await response.json();
+    if (!response.ok) {
+      throw new Error(result.message || "vendor suggestion fetch failed");
+    }
+
+    updateVendorSuggestions([
+      ...(result.items || []),
+      ...state.rows.map((row) => row.vendor),
+    ]);
+  } catch (error) {
+    console.error(error);
+  }
 };
 
 const saveCurrentMode = () => {
@@ -432,6 +480,7 @@ const savePurchaseLedger = async () => {
       throw new Error(result.message || "purchase ledger save failed");
     }
 
+    await loadVendorSuggestions();
     const storageLabel = result.storage_label || result.db_path || "";
     copyFeedback.textContent = storageLabel
       ? `${result.message} 저장 위치: ${storageLabel}`
@@ -579,5 +628,7 @@ modeMaterialButton?.addEventListener("click", () => {
 
 loadCurrentMode();
 loadRows();
+mergeVendorSuggestionsFromRows();
 updateModeControls();
 renderRows();
+loadVendorSuggestions();
