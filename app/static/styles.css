@@ -374,6 +374,10 @@ h2 {
   font-size: 13px;
 }
 
+.field-span-wide {
+  grid-column: 1 / -1;
+}
+
 .field-block input {
   width: 100%;
   border: 1px solid rgba(72, 79, 56, 0.14);

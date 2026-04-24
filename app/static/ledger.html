@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>매입처 목록</title>
+    <title>매입장 목록</title>
     <link rel="stylesheet" href="/static/styles.css" />
   </head>
   <body>
@@ -11,15 +11,16 @@
       <header class="hero">
         <div class="hero-copy">
           <p class="eyebrow">Purchase Ledger</p>
-          <h1>저장된 매입처 목록</h1>
+          <h1>정리된 매입장 목록</h1>
           <p class="hero-text">
-            저장된 매입 내역을 조회하고 수정하거나 삭제하고, 전체 또는 선택 항목만 엑셀로 내보낼 수 있습니다.
+            저장된 매입 내역을 조회하고 수정하거나 삭제하고, 전체 또는 선택 항목만 엑셀로
+            내려받을 수 있습니다.
           </p>
         </div>
         <div class="hero-panel">
           <div class="action-card">
-            <p class="section-kicker">Move</p>
-            <h2>화면 이동</h2>
+            <p class="section-kicker">Actions</p>
+            <h2>빠른 작업</h2>
             <div class="inline-actions stretch">
               <a class="btn" href="/">입력 화면으로</a>
               <button id="refresh-ledger-btn" class="btn primary" type="button">
@@ -27,6 +28,16 @@
                 <span id="refresh-ledger-spinner" class="spinner hidden" aria-hidden="true"></span>
               </button>
             </div>
+            <div class="inline-actions stretch">
+              <button id="backup-database-btn" class="btn" type="button">
+                <span id="backup-database-label">DB 백업</span>
+                <span id="backup-database-spinner" class="spinner hidden" aria-hidden="true"></span>
+              </button>
+            </div>
+            <p class="panel-text">
+              백업 파일은 프로그램 폴더 기준 <code>backup</code> 폴더에 날짜별
+              <code>.db</code> 파일로 저장됩니다.
+            </p>
             <p id="ledger-feedback" class="feedback"></p>
           </div>
         </div>
@@ -43,11 +54,11 @@
 
           <div class="filter-grid">
             <label class="field-block">
-              <span>&#52852;&#53580;&#44256;&#47532;</span>
+              <span>카테고리</span>
               <select id="ledger-category">
-                <option value="all">&#51204;&#52404;</option>
-                <option value="plant">&#49885;&#47932;</option>
-                <option value="material">&#51088;&#51116;</option>
+                <option value="all">전체</option>
+                <option value="plant">식물</option>
+                <option value="material">자재</option>
               </select>
             </label>
             <label class="field-block">
@@ -79,11 +90,19 @@
             </button>
             <button id="export-selected-ledger-btn" class="btn primary" type="button">
               <span id="export-selected-ledger-label">선택 엑셀</span>
-              <span id="export-selected-ledger-spinner" class="spinner hidden" aria-hidden="true"></span>
+              <span
+                id="export-selected-ledger-spinner"
+                class="spinner hidden"
+                aria-hidden="true"
+              ></span>
             </button>
             <button id="export-selected-labels-btn" class="btn" type="button">
               <span id="export-selected-labels-label">선택 라벨 엑셀</span>
-              <span id="export-selected-labels-spinner" class="spinner hidden" aria-hidden="true"></span>
+              <span
+                id="export-selected-labels-spinner"
+                class="spinner hidden"
+                aria-hidden="true"
+              ></span>
             </button>
           </div>
 
@@ -94,7 +113,7 @@
           <div class="panel-header">
             <div>
               <p class="section-kicker">Ledger</p>
-              <h2>저장 내역</h2>
+              <h2>저장된 내역</h2>
             </div>
           </div>
           <div class="table-wrap">
@@ -120,7 +139,7 @@
                     <input id="select-all-ledger" type="checkbox" aria-label="현재 목록 전체 선택" />
                   </th>
                   <th>ID</th>
-                  <th>&#52852;&#53580;&#44256;&#47532;</th>
+                  <th>카테고리</th>
                   <th>저장날짜</th>
                   <th>품목명</th>
                   <th>매입처</th>

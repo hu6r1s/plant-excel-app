@@ -1,5 +1,6 @@
 fastapi==0.116.1
 uvicorn==0.35.0
+libsql
 openpyxl==3.1.5
 python-multipart
 pillow==11.3.0

@@ -1,3 +1,5 @@
+const LEDGER_CACHE_KEY = "purchase-ledger-cache-v1";
+
 const ledgerBody = document.querySelector("#ledger-body");
 const ledgerFeedback = document.querySelector("#ledger-feedback");
 const refreshButton = document.querySelector("#refresh-ledger-btn");
@@ -19,17 +21,22 @@ const exportSelectedLabelsLabel = document.querySelector("#export-selected-label
 const exportSelectedLabelsSpinner = document.querySelector("#export-selected-labels-spinner");
 const selectionSummary = document.querySelector("#selection-summary");
 const selectAllLedgerCheckbox = document.querySelector("#select-all-ledger");
+const backupDatabaseButton = document.querySelector("#backup-database-btn");
+const backupDatabaseLabel = document.querySelector("#backup-database-label");
+const backupDatabaseSpinner = document.querySelector("#backup-database-spinner");
 
 const PRICE_FIELDS = ["cost", "wholesale", "retail"];
 const CATEGORY_LABELS = {
-  plant: "\uC2DD\uBB3C",
-  material: "\uC790\uC7AC",
+  plant: "식물",
+  material: "자재",
 };
 
-let searchDebounceTimer = null;
+let allItems = [];
 let currentItems = [];
 let editingId = null;
 let selectedIds = new Set();
+let activeLedgerRequestId = 0;
+let ledgerRequestController = null;
 
 const escapeHtml = (value) =>
   String(value ?? "")
@@ -54,6 +61,11 @@ const formatEditableValue = (value) => {
   }
 
   return Number.isInteger(numberValue) ? `${numberValue}` : `${numberValue}`;
+};
+
+const formatPlainValue = (value) => {
+  const formatted = formatEditableValue(value);
+  return formatted === "" ? "-" : formatted;
 };
 
 const parsePriceInput = (value) => {
@@ -96,6 +108,13 @@ const normalizeCategory = (value, fallback = "plant") => {
   return fallback;
 };
 
+const normalizeLedgerItems = (items) =>
+  (items || []).map((item) => ({
+    ...item,
+    id: Number(item.id),
+    category: normalizeCategory(item.category),
+  }));
+
 const getCategoryLabel = (value) => CATEGORY_LABELS[normalizeCategory(value)] || CATEGORY_LABELS.plant;
 
 const buildCategoryOptions = (selectedCategory) => {
@@ -108,24 +127,69 @@ const buildCategoryOptions = (selectedCategory) => {
     .join("");
 };
 
-const buildQueryString = () => {
-  const params = new URLSearchParams();
-  if (nameInput.value.trim()) {
-    params.set("name", nameInput.value.trim());
+const getVisibleIds = () => currentItems.map((item) => Number(item.id));
+
+const saveLedgerCache = () => {
+  try {
+    window.localStorage.setItem(LEDGER_CACHE_KEY, JSON.stringify(allItems));
+  } catch (error) {
+    console.error(error);
   }
-
-  if (categoryFilterSelect && categoryFilterSelect.value !== "all") {
-    params.set("category", normalizeCategory(categoryFilterSelect.value));
-  }
-
-  params.set("sort", sortSelect.value || "date");
-  params.set("direction", directionSelect.value || "desc");
-
-  const query = params.toString();
-  return query ? `?${query}` : "";
 };
 
-const getVisibleIds = () => currentItems.map((item) => Number(item.id));
+const loadLedgerCache = () => {
+  try {
+    const cached = window.localStorage.getItem(LEDGER_CACHE_KEY);
+    if (!cached) {
+      return [];
+    }
+
+    return normalizeLedgerItems(JSON.parse(cached));
+  } catch (error) {
+    console.error(error);
+    return [];
+  }
+};
+
+const compareLedgerItems = (left, right) => {
+  const sortKey = (sortSelect?.value || "date").toLowerCase();
+  const directionMultiplier = (directionSelect?.value || "desc").toLowerCase() === "asc" ? 1 : -1;
+
+  let comparison = 0;
+  if (sortKey === "id") {
+    comparison = left.id - right.id;
+  } else if (sortKey === "name") {
+    comparison = String(left.name || "").localeCompare(String(right.name || ""), "ko-KR", {
+      sensitivity: "base",
+      numeric: true,
+    });
+    if (comparison === 0) {
+      comparison = left.id - right.id;
+    }
+  } else {
+    comparison = String(left.created_date || "").localeCompare(String(right.created_date || ""));
+    if (comparison === 0) {
+      comparison = left.id - right.id;
+    }
+  }
+
+  return comparison * directionMultiplier;
+};
+
+const getFilteredItems = () => {
+  const keyword = String(nameInput?.value || "").trim().toLowerCase();
+  const category = categoryFilterSelect?.value || "all";
+
+  const filtered = allItems.filter((item) => {
+    const matchesName = !keyword || String(item.name || "").toLowerCase().includes(keyword);
+    const matchesCategory =
+      category === "all" || normalizeCategory(item.category) === normalizeCategory(category);
+    return matchesName && matchesCategory;
+  });
+
+  filtered.sort(compareLedgerItems);
+  return filtered;
+};
 
 const updateSelectionSummary = () => {
   const visibleIds = getVisibleIds();
@@ -134,7 +198,7 @@ const updateSelectionSummary = () => {
 
   if (selectedTotalCount > 0) {
     if (selectedVisibleCount > 0) {
-      selectionSummary.textContent = `전체 ${selectedTotalCount}개 선택 중 현재 목록에 ${selectedVisibleCount}개가 보입니다.`;
+      selectionSummary.textContent = `전체 ${selectedTotalCount}개 선택 중 현재 목록에는 ${selectedVisibleCount}개가 보입니다.`;
     } else {
       selectionSummary.textContent = `전체 ${selectedTotalCount}개를 선택했지만 현재 검색 결과에는 보이지 않습니다.`;
     }
@@ -220,8 +284,8 @@ const renderLedgerRows = (items) => {
         <td>${escapeHtml(item.name || "-")}</td>
         <td>${escapeHtml(item.vendor || "-")}</td>
         <td>${escapeHtml(item.spec || "-")}</td>
-        <td>${item.quantity ?? "-"}</td>
-        <td>${item.purchase_count ?? "-"}</td>
+        <td>${escapeHtml(formatPlainValue(item.quantity))}</td>
+        <td>${escapeHtml(formatPlainValue(item.purchase_count))}</td>
         <td>${formatCurrency(item.cost)}</td>
         <td>${formatCurrency(item.wholesale)}</td>
         <td>${formatCurrency(item.retail)}</td>
@@ -240,38 +304,75 @@ const renderLedgerRows = (items) => {
   updateSelectionSummary();
 };
 
-const loadLedger = async () => {
-  refreshButton.disabled = true;
-  refreshSpinner.classList.remove("hidden");
-  refreshLabel.textContent = "불러오는 중...";
-  ledgerFeedback.textContent = "매입 데이터를 불러오고 있습니다.";
+const applyLocalFilters = ({ keepFeedback = false } = {}) => {
+  currentItems = getFilteredItems();
+
+  if (editingId !== null && !currentItems.some((item) => item.id === editingId)) {
+    editingId = null;
+  }
+
+  renderLedgerRows(currentItems);
+
+  if (!keepFeedback) {
+    ledgerFeedback.textContent = `${currentItems.length}개의 항목을 표시 중입니다.`;
+  }
+};
+
+const loadLedgerFromServer = async ({ silent = false } = {}) => {
+  const requestId = ++activeLedgerRequestId;
+  const controller = new AbortController();
+
+  if (ledgerRequestController) {
+    ledgerRequestController.abort();
+  }
+  ledgerRequestController = controller;
+
+  if (!silent) {
+    refreshButton.disabled = true;
+    refreshSpinner.classList.remove("hidden");
+    refreshLabel.textContent = "불러오는 중...";
+    ledgerFeedback.textContent = "매입 데이터를 불러오고 있습니다.";
+  }
 
   try {
-    const response = await fetch(`/api/purchase-ledger${buildQueryString()}`);
+    const response = await fetch("/api/purchase-ledger", {
+      signal: controller.signal,
+    });
     const result = await response.json();
     if (!response.ok) {
       throw new Error(result.message || "ledger fetch failed");
     }
-
-    currentItems = (result.items || []).map((item) => ({
-      ...item,
-      id: Number(item.id),
-      category: normalizeCategory(item.category),
-    }));
-
-    if (editingId !== null && !currentItems.some((item) => item.id === editingId)) {
-      editingId = null;
+    if (requestId !== activeLedgerRequestId) {
+      return;
     }
 
-    renderLedgerRows(currentItems);
-    ledgerFeedback.textContent = `${result.count || 0}개의 항목을 불러왔습니다.`;
+    allItems = normalizeLedgerItems(result.items);
+    const validIds = new Set(allItems.map((item) => Number(item.id)));
+    selectedIds = new Set([...selectedIds].filter((id) => validIds.has(id)));
+    saveLedgerCache();
+    applyLocalFilters({ keepFeedback: silent });
+
+    if (!silent) {
+      ledgerFeedback.textContent = `${allItems.length}개의 항목을 불러왔습니다.`;
+    }
   } catch (error) {
+    if (error.name === "AbortError") {
+      return;
+    }
+    if (requestId !== activeLedgerRequestId) {
+      return;
+    }
     console.error(error);
-    ledgerFeedback.textContent = "매입 목록을 불러오지 못했습니다.";
+    ledgerFeedback.textContent = error.message || "매입 목록을 불러오지 못했습니다.";
   } finally {
-    refreshButton.disabled = false;
-    refreshSpinner.classList.add("hidden");
-    refreshLabel.textContent = "새로고침";
+    if (ledgerRequestController === controller) {
+      ledgerRequestController = null;
+    }
+    if (!silent && requestId === activeLedgerRequestId) {
+      refreshButton.disabled = false;
+      refreshSpinner.classList.add("hidden");
+      refreshLabel.textContent = "새로고침";
+    }
   }
 };
 
@@ -296,22 +397,36 @@ const getLedgerExportIds = () => {
 };
 
 const exportAllLedger = async () => {
+  const visibleIds = getVisibleIds();
+  if (!visibleIds.length) {
+    ledgerFeedback.textContent = "내보낼 항목이 없습니다.";
+    return;
+  }
+
   exportAllLedgerButton.disabled = true;
   exportAllLedgerSpinner.classList.remove("hidden");
   exportAllLedgerLabel.textContent = "내보내는 중...";
-  ledgerFeedback.textContent = "매입 내역 전체를 엑셀로 내보내고 있습니다.";
+  ledgerFeedback.textContent = "현재 화면의 매입 내역을 엑셀로 내보내고 있습니다.";
 
   try {
-    const response = await fetch("/api/purchase-ledger/export");
+    const response = await fetch("/api/purchase-ledger/export/selected", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ ids: visibleIds }),
+    });
+
     if (!response.ok) {
-      throw new Error("ledger export failed");
+      const errorText = await response.text();
+      throw new Error(errorText || "ledger export failed");
     }
 
     await downloadResponseAsFile(response, "purchase-ledger.xlsx");
-    ledgerFeedback.textContent = "매입 내역 전체를 엑셀로 내보냈습니다.";
+    ledgerFeedback.textContent = "현재 화면의 매입 내역을 엑셀로 내보냈습니다.";
   } catch (error) {
     console.error(error);
-    ledgerFeedback.textContent = "전체 엑셀 내보내기에 실패했습니다.";
+    ledgerFeedback.textContent = error.message || "전체 엑셀 내보내기에 실패했습니다.";
   } finally {
     exportAllLedgerButton.disabled = false;
     exportAllLedgerSpinner.classList.add("hidden");
@@ -332,8 +447,8 @@ const exportSelectedLedger = async () => {
   exportSelectedLedgerLabel.textContent = "내보내는 중...";
   ledgerFeedback.textContent =
     selectedCount > 0
-      ? `${selectedCount}개 선택 항목을 엑셀로 내보내고 있습니다.`
-      : "현재 검색된 목록 전체를 엑셀로 내보내고 있습니다.";
+      ? `${selectedCount}개의 선택 항목을 엑셀로 내보내고 있습니다.`
+      : "현재 화면의 목록을 엑셀로 내보내고 있습니다.";
 
   try {
     const response = await fetch("/api/purchase-ledger/export/selected", {
@@ -352,11 +467,11 @@ const exportSelectedLedger = async () => {
     await downloadResponseAsFile(response, "purchase-ledger-selection.xlsx");
     ledgerFeedback.textContent =
       selectedCount > 0
-        ? "선택한 항목을 엑셀로 내보냈습니다."
-        : "현재 검색된 목록을 엑셀로 내보냈습니다.";
+        ? "선택 항목을 엑셀로 내보냈습니다."
+        : "현재 화면의 목록을 엑셀로 내보냈습니다.";
   } catch (error) {
     console.error(error);
-    ledgerFeedback.textContent = "선택 엑셀 내보내기에 실패했습니다.";
+    ledgerFeedback.textContent = error.message || "선택 엑셀 내보내기에 실패했습니다.";
   } finally {
     exportSelectedLedgerButton.disabled = false;
     exportSelectedLedgerSpinner.classList.add("hidden");
@@ -368,7 +483,7 @@ const exportSelectedLabels = async () => {
   const { selectedCount, exportIds } = getLedgerExportIds();
 
   if (!exportIds.length) {
-    ledgerFeedback.textContent = "라벨용으로 내보낼 항목이 없습니다.";
+    ledgerFeedback.textContent = "라벨 엑셀로 내보낼 항목이 없습니다.";
     return;
   }
 
@@ -377,8 +492,8 @@ const exportSelectedLabels = async () => {
   exportSelectedLabelsLabel.textContent = "내보내는 중...";
   ledgerFeedback.textContent =
     selectedCount > 0
-      ? `${selectedCount}개 선택 항목을 라벨용 엑셀로 내보내고 있습니다.`
-      : "현재 검색된 목록 전체를 라벨용 엑셀로 내보내고 있습니다.";
+      ? `${selectedCount}개의 선택 항목을 라벨 엑셀로 내보내고 있습니다.`
+      : "현재 화면의 목록을 라벨 엑셀로 내보내고 있습니다.";
 
   try {
     const response = await fetch("/api/purchase-ledger/export/selected-labels", {
@@ -397,15 +512,41 @@ const exportSelectedLabels = async () => {
     await downloadResponseAsFile(response, "plant-labels-selection.xlsx");
     ledgerFeedback.textContent =
       selectedCount > 0
-        ? "선택 항목을 라벨용 엑셀로 내보냈습니다."
-        : "현재 검색된 목록을 라벨용 엑셀로 내보냈습니다.";
+        ? "선택 항목을 라벨 엑셀로 내보냈습니다."
+        : "현재 화면의 목록을 라벨 엑셀로 내보냈습니다.";
   } catch (error) {
     console.error(error);
-    ledgerFeedback.textContent = "라벨용 엑셀 내보내기에 실패했습니다.";
+    ledgerFeedback.textContent = error.message || "라벨 엑셀 내보내기에 실패했습니다.";
   } finally {
     exportSelectedLabelsButton.disabled = false;
     exportSelectedLabelsSpinner.classList.add("hidden");
     exportSelectedLabelsLabel.textContent = "선택 라벨 엑셀";
+  }
+};
+
+const backupDatabase = async () => {
+  backupDatabaseButton.disabled = true;
+  backupDatabaseSpinner.classList.remove("hidden");
+  backupDatabaseLabel.textContent = "백업 중...";
+  ledgerFeedback.textContent = "데이터베이스 백업 파일을 만들고 있습니다.";
+
+  try {
+    const response = await fetch("/api/database/backup", {
+      method: "POST",
+    });
+    const result = await response.json();
+    if (!response.ok) {
+      throw new Error(result.message || "database backup failed");
+    }
+
+    ledgerFeedback.textContent = `${result.message} 저장 위치: ${result.backup_path}`;
+  } catch (error) {
+    console.error(error);
+    ledgerFeedback.textContent = error.message || "데이터베이스 백업에 실패했습니다.";
+  } finally {
+    backupDatabaseButton.disabled = false;
+    backupDatabaseSpinner.classList.add("hidden");
+    backupDatabaseLabel.textContent = "DB 백업";
   }
 };
 
@@ -426,8 +567,8 @@ const updateEntry = async (entryId, payload) => {
   }
 
   editingId = null;
+  await loadLedgerFromServer();
   ledgerFeedback.textContent = "매입 내역을 수정했습니다.";
-  await loadLedger();
 };
 
 const deleteEntry = async (entryId) => {
@@ -452,8 +593,8 @@ const deleteEntry = async (entryId) => {
     editingId = null;
   }
 
+  await loadLedgerFromServer();
   ledgerFeedback.textContent = "매입 내역을 삭제했습니다.";
-  await loadLedger();
 };
 
 const collectRowPayload = (rowElement) => {
@@ -497,57 +638,60 @@ const syncLedgerPriceFields = (rowElement, sourceField) => {
   }
 };
 
-const scheduleLedgerReload = () => {
-  window.clearTimeout(searchDebounceTimer);
-  searchDebounceTimer = window.setTimeout(() => {
-    loadLedger();
-  }, 180);
-};
-
-refreshButton.addEventListener("click", () => {
-  loadLedger();
+refreshButton?.addEventListener("click", () => {
+  loadLedgerFromServer();
 });
 
-nameInput.addEventListener("input", () => {
-  scheduleLedgerReload();
+nameInput?.addEventListener("input", () => {
+  applyLocalFilters();
 });
 
 categoryFilterSelect?.addEventListener("change", () => {
-  loadLedger();
+  applyLocalFilters();
 });
 
-sortSelect.addEventListener("change", () => {
-  loadLedger();
+sortSelect?.addEventListener("change", () => {
+  applyLocalFilters();
 });
 
-directionSelect.addEventListener("change", () => {
-  loadLedger();
+directionSelect?.addEventListener("change", () => {
+  applyLocalFilters();
 });
 
-clearFilterButton.addEventListener("click", () => {
-  nameInput.value = "";
+clearFilterButton?.addEventListener("click", () => {
+  if (nameInput) {
+    nameInput.value = "";
+  }
   if (categoryFilterSelect) {
     categoryFilterSelect.value = "all";
   }
-  sortSelect.value = "date";
-  directionSelect.value = "desc";
+  if (sortSelect) {
+    sortSelect.value = "date";
+  }
+  if (directionSelect) {
+    directionSelect.value = "desc";
+  }
   editingId = null;
-  loadLedger();
+  applyLocalFilters();
 });
 
-exportAllLedgerButton.addEventListener("click", () => {
+exportAllLedgerButton?.addEventListener("click", () => {
   exportAllLedger();
 });
 
-exportSelectedLedgerButton.addEventListener("click", () => {
+exportSelectedLedgerButton?.addEventListener("click", () => {
   exportSelectedLedger();
 });
 
-exportSelectedLabelsButton.addEventListener("click", () => {
+exportSelectedLabelsButton?.addEventListener("click", () => {
   exportSelectedLabels();
 });
 
-selectAllLedgerCheckbox.addEventListener("change", () => {
+backupDatabaseButton?.addEventListener("click", () => {
+  backupDatabase();
+});
+
+selectAllLedgerCheckbox?.addEventListener("change", () => {
   const visibleIds = getVisibleIds();
   if (selectAllLedgerCheckbox.checked) {
     visibleIds.forEach((id) => selectedIds.add(id));
@@ -558,7 +702,7 @@ selectAllLedgerCheckbox.addEventListener("change", () => {
   renderLedgerRows(currentItems);
 });
 
-ledgerBody.addEventListener("change", (event) => {
+ledgerBody?.addEventListener("change", (event) => {
   const checkbox = event.target.closest(".row-select");
   if (!checkbox) {
     return;
@@ -574,7 +718,7 @@ ledgerBody.addEventListener("change", (event) => {
   updateSelectionSummary();
 });
 
-ledgerBody.addEventListener("input", (event) => {
+ledgerBody?.addEventListener("input", (event) => {
   const input = event.target.closest("input[data-field]");
   if (!input) {
     return;
@@ -590,7 +734,7 @@ ledgerBody.addEventListener("input", (event) => {
   }
 });
 
-ledgerBody.addEventListener(
+ledgerBody?.addEventListener(
   "blur",
   (event) => {
     const input = event.target.closest("input[data-field]");
@@ -603,7 +747,7 @@ ledgerBody.addEventListener(
   true
 );
 
-ledgerBody.addEventListener("click", async (event) => {
+ledgerBody?.addEventListener("click", async (event) => {
   const button = event.target.closest("button[data-action]");
   if (!button) {
     return;
@@ -645,4 +789,9 @@ ledgerBody.addEventListener("click", async (event) => {
   }
 });
 
-loadLedger();
+allItems = loadLedgerCache();
+applyLocalFilters({ keepFeedback: true });
+if (allItems.length) {
+  ledgerFeedback.textContent = `${allItems.length}개의 최근 목록을 먼저 표시했습니다.`;
+}
+loadLedgerFromServer({ silent: allItems.length > 0 });

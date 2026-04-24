@@ -17,6 +17,7 @@ a = Analysis(
     datas=datas,
     hiddenimports=[
         "app.main",
+        "libsql",
         "uvicorn.logging",
         "uvicorn.loops.auto",
         "uvicorn.protocols.http.auto",

@@ -1,7 +1,12 @@
+import json
 from io import BytesIO
+import os
 from pathlib import Path
 import re
 import sqlite3
+import sys
+from datetime import datetime
+import time
 from typing import Any, TYPE_CHECKING
 
 from fastapi import FastAPI, UploadFile
@@ -21,6 +26,20 @@ BASE_DIR = Path(__file__).resolve().parent
 STATIC_DIR = BASE_DIR / "static"
 DATA_DIR = BASE_DIR / "data"
 DB_PATH = DATA_DIR / "plant_label_helper.db"
+APP_HOME = (
+    Path(sys.executable).resolve().parent
+    if getattr(sys, "frozen", False)
+    else BASE_DIR.parent
+)
+BACKUP_DIR = APP_HOME / "backup"
+ENV_PATH = APP_HOME / ".env"
+TURSO_CONFIG_PATH = APP_HOME / "turso_config.json"
+TURSO_REPLICA_DIR = APP_HOME / "data" / "turso"
+TURSO_REPLICA_PATH = TURSO_REPLICA_DIR / "purchase_entries_replica.db"
+TURSO_URL_ENV_KEY = "TURSO_DATABASE_URL"
+TURSO_TOKEN_ENV_KEY = "TURSO_AUTH_TOKEN"
+TURSO_READ_SYNC_INTERVAL_SECONDS = 2.0
+LAST_TURSO_SYNC_AT = 0.0
 
 app = FastAPI(title="Plant Label Helper")
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
@@ -54,6 +73,11 @@ class PurchaseLedgerExportSelection(BaseModel):
     ids: list[int] = []
 
 
+class TursoConfigPayload(BaseModel):
+    url: str = ""
+    auth_token: str = ""
+
+
 NUMERIC_WITH_COMMAS = re.compile(r"^\d{1,3}(,\d{3})+$")
 NUMERIC_PLAIN_MONEY = re.compile(r"^\d{4,7}$")
 PURE_NUMBER = re.compile(r"^\d+$")
@@ -76,48 +100,412 @@ def get_ocr_engine() -> "PaddleOCR":
     return OCR_ENGINE
 
 
+def load_saved_turso_config() -> dict[str, str] | None:
+    if not TURSO_CONFIG_PATH.exists():
+        return None
+
+    try:
+        payload = json.loads(TURSO_CONFIG_PATH.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+
+    url = str(payload.get("url", "")).strip()
+    auth_token = str(payload.get("auth_token", "")).strip()
+    if not url or not auth_token:
+        return None
+
+    return {"url": url, "auth_token": auth_token}
+
+
+def parse_dotenv_value(raw_value: str) -> str:
+    value = raw_value.strip()
+    if len(value) >= 2 and value[0] == value[-1] and value[0] in {"'", '"'}:
+        return value[1:-1]
+    return value
+
+
+def load_dotenv_values() -> dict[str, str]:
+    if not ENV_PATH.exists():
+        return {}
+
+    try:
+        lines = ENV_PATH.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return {}
+
+    values: dict[str, str] = {}
+    for line in lines:
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        if stripped.startswith("export "):
+            stripped = stripped[len("export ") :].strip()
+        if "=" not in stripped:
+            continue
+
+        key, raw_value = stripped.split("=", 1)
+        key = key.strip()
+        if not key:
+            continue
+        values[key] = parse_dotenv_value(raw_value)
+
+    return values
+
+
+def load_environment_turso_config() -> dict[str, str] | None:
+    dotenv_values = load_dotenv_values()
+    process_url = str(os.getenv(TURSO_URL_ENV_KEY) or "").strip()
+    process_token = str(os.getenv(TURSO_TOKEN_ENV_KEY) or "").strip()
+    dotenv_url = str(dotenv_values.get(TURSO_URL_ENV_KEY, "")).strip()
+    dotenv_token = str(dotenv_values.get(TURSO_TOKEN_ENV_KEY, "")).strip()
+
+    url = process_url or dotenv_url
+    auth_token = process_token or dotenv_token
+    if not url or not auth_token:
+        return None
+
+    if process_url or process_token:
+        source = "process-env" if process_url and process_token else "mixed-env"
+    else:
+        source = "dotenv"
+
+    return {"url": url, "auth_token": auth_token, "source": source}
+
+
+def save_turso_config(url: str, auth_token: str) -> None:
+    TURSO_CONFIG_PATH.write_text(
+        json.dumps(
+            {"url": url.strip(), "auth_token": auth_token.strip()},
+            ensure_ascii=False,
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+
+
+def get_active_turso_config() -> dict[str, str] | None:
+    environment_config = load_environment_turso_config()
+    if environment_config:
+        return environment_config
+
+    saved_config = load_saved_turso_config()
+    if saved_config:
+        return {**saved_config, "source": "saved-config"}
+
+    return None
+
+
+def require_libsql() -> Any:
+    try:
+        import libsql
+    except ImportError as error:
+        raise RuntimeError(
+            "Turso 연결에 필요한 libsql 패키지가 설치되지 않았습니다. requirements 설치 후 다시 실행해 주세요."
+        ) from error
+
+    return libsql
+
+
+def close_connection(connection: Any | None) -> None:
+    if connection is None:
+        return
+
+    close = getattr(connection, "close", None)
+    if callable(close):
+        close()
+
+
+def maybe_sync_connection(connection: Any) -> None:
+    sync = getattr(connection, "sync", None)
+    if callable(sync):
+        sync()
+
+
+def mark_turso_sync_completed() -> None:
+    global LAST_TURSO_SYNC_AT
+    LAST_TURSO_SYNC_AT = time.monotonic()
+
+
+def should_sync_turso_replica(force: bool = False) -> bool:
+    if force or not TURSO_REPLICA_PATH.exists():
+        return True
+
+    return (time.monotonic() - LAST_TURSO_SYNC_AT) >= TURSO_READ_SYNC_INTERVAL_SECONDS
+
+
+def cursor_to_dicts(cursor: Any) -> list[dict[str, Any]]:
+    columns = [str(column[0]) for column in (cursor.description or [])]
+    return [dict(zip(columns, row)) for row in cursor.fetchall()]
+
+
+def cursor_to_dict(cursor: Any) -> dict[str, Any] | None:
+    columns = [str(column[0]) for column in (cursor.description or [])]
+    row = cursor.fetchone()
+    if row is None:
+        return None
+    return dict(zip(columns, row))
+
+
+def fetch_scalar(connection: Any, query: str, params: tuple[Any, ...] = ()) -> Any:
+    cursor = connection.execute(query, params)
+    row = cursor.fetchone()
+    if row is None:
+        return None
+    if isinstance(row, (tuple, list)):
+        return row[0]
+    return row
+
+
+def ensure_purchase_entries_schema(connection: Any) -> None:
+    connection.execute(
+        """
+        CREATE TABLE IF NOT EXISTS purchase_entries (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            category TEXT NOT NULL DEFAULT 'plant',
+            name TEXT NOT NULL,
+            vendor TEXT,
+            spec TEXT,
+            quantity REAL,
+            purchase_count REAL,
+            cost REAL,
+            wholesale REAL,
+            retail REAL,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+        """
+    )
+    existing_columns = {
+        str(row[1]) for row in connection.execute("PRAGMA table_info(purchase_entries)").fetchall()
+    }
+    if "vendor" not in existing_columns:
+        connection.execute("ALTER TABLE purchase_entries ADD COLUMN vendor TEXT")
+    if "purchase_count" not in existing_columns:
+        connection.execute("ALTER TABLE purchase_entries ADD COLUMN purchase_count REAL")
+    if "category" not in existing_columns:
+        connection.execute(
+            "ALTER TABLE purchase_entries ADD COLUMN category TEXT NOT NULL DEFAULT 'plant'"
+        )
+    connection.execute(
+        """
+        UPDATE purchase_entries
+        SET category = 'plant'
+        WHERE category IS NULL OR TRIM(category) = ''
+        """
+    )
+    connection.commit()
+    maybe_sync_connection(connection)
+
+
 def init_db() -> None:
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     with sqlite3.connect(DB_PATH) as connection:
-        connection.execute(
-            """
-            CREATE TABLE IF NOT EXISTS purchase_entries (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                category TEXT NOT NULL DEFAULT 'plant',
-                name TEXT NOT NULL,
-                vendor TEXT,
-                spec TEXT,
-                quantity REAL,
-                purchase_count REAL,
-                cost REAL,
-                wholesale REAL,
-                retail REAL,
-                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
-            )
-            """
-        )
-        existing_columns = {
-            row[1] for row in connection.execute("PRAGMA table_info(purchase_entries)")
-        }
-        if "vendor" not in existing_columns:
-            connection.execute("ALTER TABLE purchase_entries ADD COLUMN vendor TEXT")
-        if "purchase_count" not in existing_columns:
-            connection.execute("ALTER TABLE purchase_entries ADD COLUMN purchase_count REAL")
-        if "category" not in existing_columns:
-            connection.execute(
-                "ALTER TABLE purchase_entries ADD COLUMN category TEXT NOT NULL DEFAULT 'plant'"
-            )
-        connection.execute(
-            """
-            UPDATE purchase_entries
-            SET category = 'plant'
-            WHERE category IS NULL OR TRIM(category) = ''
-            """
-        )
-        connection.commit()
+        ensure_purchase_entries_schema(connection)
 
 
 init_db()
+
+
+def get_database_settings_payload() -> dict[str, Any]:
+    config = get_active_turso_config()
+    if config:
+        source = config.get("source", "saved-config")
+        source_label_map = {
+            "dotenv": ".env 파일",
+            "process-env": "시스템 환경변수",
+            "mixed-env": "시스템 환경변수 + .env",
+            "saved-config": "앱 저장 설정",
+        }
+        return {
+            "mode": "turso",
+            "configured": True,
+            "url": config["url"],
+            "token_saved": True,
+            "backup_dir": str(BACKUP_DIR),
+            "storage_label": f"Turso ({config['url']})",
+            "config_source": source,
+            "config_source_label": source_label_map.get(source, "앱 저장 설정"),
+            "env_path": str(ENV_PATH),
+        }
+
+    return {
+        "mode": "local",
+        "configured": False,
+        "url": "",
+        "token_saved": False,
+        "backup_dir": str(BACKUP_DIR),
+        "storage_label": str(DB_PATH),
+        "config_source": "local",
+        "config_source_label": "로컬 SQLite",
+        "env_path": str(ENV_PATH),
+    }
+
+
+def sync_turso_replica(force: bool = False) -> None:
+    if not should_sync_turso_replica(force):
+        return
+
+    config = get_active_turso_config()
+    if not config:
+        return
+
+    TURSO_REPLICA_DIR.mkdir(parents=True, exist_ok=True)
+    libsql = require_libsql()
+    connection = None
+    try:
+        connection = libsql.connect(
+            str(TURSO_REPLICA_PATH),
+            sync_url=config["url"],
+            auth_token=config["auth_token"],
+        )
+        maybe_sync_connection(connection)
+        ensure_purchase_entries_schema(connection)
+        mark_turso_sync_completed()
+    except Exception as error:
+        close_connection(connection)
+        raise RuntimeError(f"Turso replica sync failed: {error}") from error
+    finally:
+        close_connection(connection)
+
+
+def open_purchase_connection(force_sync: bool = False, for_write: bool = False) -> tuple[Any, str]:
+    config = get_active_turso_config()
+    if not config:
+        connection = sqlite3.connect(DB_PATH)
+        ensure_purchase_entries_schema(connection)
+        return connection, "local"
+
+    if not for_write:
+        sync_turso_replica(force=force_sync)
+        connection = sqlite3.connect(TURSO_REPLICA_PATH)
+        ensure_purchase_entries_schema(connection)
+        return connection, "turso"
+
+    TURSO_REPLICA_DIR.mkdir(parents=True, exist_ok=True)
+    libsql = require_libsql()
+    connection = None
+    try:
+        connection = libsql.connect(
+            str(TURSO_REPLICA_PATH),
+            sync_url=config["url"],
+            auth_token=config["auth_token"],
+        )
+        maybe_sync_connection(connection)
+        mark_turso_sync_completed()
+        ensure_purchase_entries_schema(connection)
+        return connection, "turso"
+    except Exception as error:
+        close_connection(connection)
+        raise RuntimeError(f"Turso 데이터베이스에 연결하지 못했습니다: {error}") from error
+
+
+def read_local_purchase_rows() -> list[tuple[Any, ...]]:
+    if not DB_PATH.exists():
+        return []
+
+    with sqlite3.connect(DB_PATH) as connection:
+        return connection.execute(
+            """
+            SELECT category,
+                   name,
+                   vendor,
+                   spec,
+                   quantity,
+                   purchase_count,
+                   cost,
+                   wholesale,
+                   retail
+            FROM purchase_entries
+            ORDER BY id ASC
+            """
+        ).fetchall()
+
+
+def maybe_migrate_local_rows_to_remote(connection: Any) -> int:
+    remote_count = int(fetch_scalar(connection, "SELECT COUNT(*) FROM purchase_entries") or 0)
+    if remote_count > 0:
+        return 0
+
+    local_rows = read_local_purchase_rows()
+    if not local_rows:
+        return 0
+
+    connection.executemany(
+        """
+        INSERT INTO purchase_entries (
+            category,
+            name,
+            vendor,
+            spec,
+            quantity,
+            purchase_count,
+            cost,
+            wholesale,
+            retail
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        local_rows,
+    )
+    connection.commit()
+    maybe_sync_connection(connection)
+    return len(local_rows)
+
+
+def build_backup_path() -> Path:
+    BACKUP_DIR.mkdir(parents=True, exist_ok=True)
+    date_label = datetime.now().strftime("%Y-%m-%d")
+    candidate = BACKUP_DIR / f"purchase-ledger-{date_label}.db"
+    if not candidate.exists():
+        return candidate
+
+    index = 2
+    while True:
+        numbered = BACKUP_DIR / f"purchase-ledger-{date_label}-{index}.db"
+        if not numbered.exists():
+            return numbered
+        index += 1
+
+
+def cleanup_replica_sidecars(path: Path) -> None:
+    for candidate in (path, path.with_suffix(path.suffix + "-wal"), path.with_suffix(path.suffix + "-shm")):
+        if candidate.exists():
+            try:
+                candidate.unlink()
+            except OSError:
+                pass
+
+
+def create_database_backup() -> tuple[Path, str]:
+    backup_path = build_backup_path()
+    config = get_active_turso_config()
+    if not config:
+        if not DB_PATH.exists():
+            init_db()
+        with sqlite3.connect(DB_PATH) as source_connection, sqlite3.connect(backup_path) as target_connection:
+            source_connection.backup(target_connection)
+        return backup_path, "local"
+
+    replica_path = BACKUP_DIR / ".purchase-ledger-backup-replica.db"
+    cleanup_replica_sidecars(replica_path)
+    connection = None
+    try:
+        libsql = require_libsql()
+        connection = libsql.connect(
+            str(replica_path),
+            sync_url=config["url"],
+            auth_token=config["auth_token"],
+        )
+        maybe_sync_connection(connection)
+    except Exception as error:
+        raise RuntimeError(f"Turso 백업 파일을 준비하지 못했습니다: {error}") from error
+    finally:
+        close_connection(connection)
+
+    with sqlite3.connect(replica_path) as source_connection, sqlite3.connect(backup_path) as target_connection:
+        source_connection.backup(target_connection)
+
+    cleanup_replica_sidecars(replica_path)
+    return backup_path, "turso"
 
 
 def normalize_text(value: str) -> str:
@@ -225,9 +613,8 @@ def normalize_purchase_entry_row(
     )
 
 
-def fetch_purchase_entry(connection: sqlite3.Connection, entry_id: int) -> sqlite3.Row | None:
-    connection.row_factory = sqlite3.Row
-    return connection.execute(
+def fetch_purchase_entry(connection: Any, entry_id: int) -> dict[str, Any] | None:
+    cursor = connection.execute(
         """
         SELECT id,
                category,
@@ -244,18 +631,16 @@ def fetch_purchase_entry(connection: sqlite3.Connection, entry_id: int) -> sqlit
         WHERE id = ?
         """,
         (entry_id,),
-    ).fetchone()
+    )
+    return cursor_to_dict(cursor)
 
 
-def fetch_purchase_entries_by_ids(
-    connection: sqlite3.Connection, entry_ids: list[int]
-) -> list[sqlite3.Row]:
+def fetch_purchase_entries_by_ids(connection: Any, entry_ids: list[int]) -> list[dict[str, Any]]:
     if not entry_ids:
         return []
 
     placeholders = ", ".join("?" for _ in entry_ids)
-    connection.row_factory = sqlite3.Row
-    rows = connection.execute(
+    cursor = connection.execute(
         f"""
         SELECT id,
                date(datetime(created_at, '+9 hours')) AS created_date,
@@ -271,8 +656,9 @@ def fetch_purchase_entries_by_ids(
         FROM purchase_entries
         WHERE id IN ({placeholders})
         """,
-        entry_ids,
-    ).fetchall()
+        tuple(entry_ids),
+    )
+    rows = cursor_to_dicts(cursor)
 
     row_map = {int(row["id"]): row for row in rows}
     return [row_map[entry_id] for entry_id in entry_ids if entry_id in row_map]
@@ -639,6 +1025,98 @@ async def health() -> dict[str, str]:
     return {"status": "ok"}
 
 
+@app.get("/api/database/settings")
+async def get_database_settings() -> JSONResponse:
+    return JSONResponse(get_database_settings_payload())
+
+
+@app.post("/api/database/turso")
+async def save_database_turso_settings(payload: TursoConfigPayload) -> JSONResponse:
+    active_environment_config = load_environment_turso_config()
+    if active_environment_config:
+        source_label_map = {
+            "dotenv": ".env 파일",
+            "process-env": "시스템 환경변수",
+            "mixed-env": "시스템 환경변수 + .env",
+        }
+        source_label = source_label_map.get(active_environment_config.get("source", ""), ".env")
+        return JSONResponse(
+            {
+                "message": f"현재 Turso 연결은 {source_label}로 관리되고 있습니다. .env 값을 수정해 주세요.",
+                "settings": get_database_settings_payload(),
+            },
+            status_code=400,
+        )
+
+    existing_config = load_saved_turso_config()
+    url = payload.url.strip() or (existing_config["url"] if existing_config else "")
+    auth_token = payload.auth_token.strip() or (
+        existing_config["auth_token"] if existing_config else ""
+    )
+
+    if not url or not auth_token:
+        return JSONResponse(
+            {"message": "Turso URL과 토큰을 모두 입력해 주세요."},
+            status_code=400,
+        )
+    if not url.startswith("libsql://"):
+        return JSONResponse(
+            {"message": "Turso URL은 libsql:// 로 시작해야 합니다."},
+            status_code=400,
+        )
+
+    TURSO_REPLICA_DIR.mkdir(parents=True, exist_ok=True)
+    connection = None
+    try:
+        libsql = require_libsql()
+        connection = libsql.connect(
+            str(TURSO_REPLICA_PATH),
+            sync_url=url,
+            auth_token=auth_token,
+        )
+        maybe_sync_connection(connection)
+        ensure_purchase_entries_schema(connection)
+        migrated_count = maybe_migrate_local_rows_to_remote(connection)
+    except Exception as error:
+        close_connection(connection)
+        return JSONResponse(
+            {"message": f"Turso 연결에 실패했습니다: {error}"},
+            status_code=400,
+        )
+    finally:
+        close_connection(connection)
+
+    save_turso_config(url, auth_token)
+    migrated_message = (
+        f" 로컬 매입장 {migrated_count}개 항목도 함께 옮겼습니다."
+        if migrated_count > 0
+        else ""
+    )
+    return JSONResponse(
+        {
+            "message": f"Turso 연결을 저장했습니다.{migrated_message}",
+            "migrated_count": migrated_count,
+            "settings": get_database_settings_payload(),
+        }
+    )
+
+
+@app.post("/api/database/backup")
+async def backup_database() -> JSONResponse:
+    try:
+        backup_path, mode = create_database_backup()
+    except RuntimeError as error:
+        return JSONResponse({"message": str(error)}, status_code=500)
+
+    return JSONResponse(
+        {
+            "message": "데이터베이스 백업을 만들었습니다.",
+            "mode": mode,
+            "backup_path": str(backup_path),
+        }
+    )
+
+
 @app.post("/api/ocr/preview")
 async def ocr_preview(file: UploadFile) -> JSONResponse:
     suffix = Path(file.filename or "").suffix.lower()
@@ -742,7 +1220,10 @@ async def save_purchase_ledger(rows: list[PlantRow]) -> JSONResponse:
             status_code=400,
         )
 
-    with sqlite3.connect(DB_PATH) as connection:
+    connection = None
+    storage_label = str(DB_PATH)
+    try:
+        connection, mode = open_purchase_connection(force_sync=True, for_write=True)
         connection.executemany(
             """
             INSERT INTO purchase_entries (
@@ -761,12 +1242,20 @@ async def save_purchase_ledger(rows: list[PlantRow]) -> JSONResponse:
             normalized_rows,
         )
         connection.commit()
+        maybe_sync_connection(connection)
+        if mode == "turso":
+            config = get_active_turso_config()
+            storage_label = f"Turso ({config['url']})" if config else "Turso"
+    except RuntimeError as error:
+        return JSONResponse({"message": str(error), "saved_count": 0}, status_code=500)
+    finally:
+        close_connection(connection)
 
     return JSONResponse(
         {
             "message": f"{len(normalized_rows)}개 항목을 매입장에 저장했습니다.",
             "saved_count": len(normalized_rows),
-            "db_path": str(DB_PATH),
+            "storage_label": storage_label,
         }
     )
 
@@ -791,8 +1280,17 @@ async def update_purchase_ledger(entry_id: int, row: PurchaseLedgerRowUpdate) ->
             status_code=400,
         )
 
-    with sqlite3.connect(DB_PATH) as connection:
-        cursor = connection.execute(
+    connection = None
+    try:
+        connection, _mode = open_purchase_connection(force_sync=True, for_write=True)
+        existing_item = fetch_purchase_entry(connection, entry_id)
+        if existing_item is None:
+            return JSONResponse(
+                {"message": "?ㅼ젙???μ뿭??李얠쓣 ???놁뒿?덈떎."},
+                status_code=404,
+            )
+
+        connection.execute(
             """
             UPDATE purchase_entries
             SET category = ?,
@@ -809,27 +1307,35 @@ async def update_purchase_ledger(entry_id: int, row: PurchaseLedgerRowUpdate) ->
             (*normalized_row, entry_id),
         )
         connection.commit()
-
-        if cursor.rowcount == 0:
-            return JSONResponse(
-                {"message": "?ㅼ젙???μ뿭??李얠쓣 ???놁뒿?덈떎."},
-                status_code=404,
-            )
+        maybe_sync_connection(connection)
 
         item = fetch_purchase_entry(connection, entry_id)
+    except RuntimeError as error:
+        return JSONResponse({"message": str(error)}, status_code=500)
+    finally:
+        close_connection(connection)
 
     return JSONResponse(
         {
             "message": "留ㅼ엯 ???μ뿭???섏젙?덉뒿?덈떎.",
-            "item": dict(item) if item else None,
+            "item": item,
         }
     )
 
 
 @app.delete("/api/purchase-ledger/{entry_id}")
 async def delete_purchase_ledger(entry_id: int) -> JSONResponse:
-    with sqlite3.connect(DB_PATH) as connection:
-        cursor = connection.execute(
+    connection = None
+    try:
+        connection, _mode = open_purchase_connection(force_sync=True, for_write=True)
+        existing_item = fetch_purchase_entry(connection, entry_id)
+        if existing_item is None:
+            return JSONResponse(
+                {"message": "?곗궘???μ뿭??李얠쓣 ???놁뒿?덈떎."},
+                status_code=404,
+            )
+
+        connection.execute(
             """
             DELETE FROM purchase_entries
             WHERE id = ?
@@ -837,12 +1343,11 @@ async def delete_purchase_ledger(entry_id: int) -> JSONResponse:
             (entry_id,),
         )
         connection.commit()
-
-    if cursor.rowcount == 0:
-        return JSONResponse(
-            {"message": "?곗궘???μ뿭??李얠쓣 ???놁뒿?덈떎."},
-            status_code=404,
-        )
+        maybe_sync_connection(connection)
+    except RuntimeError as error:
+        return JSONResponse({"message": str(error)}, status_code=500)
+    finally:
+        close_connection(connection)
 
     return JSONResponse({"message": "留ㅼ엯 ???μ뿭???곗궘?덉뒿?덈떎."})
 
@@ -895,13 +1400,18 @@ async def get_purchase_ledger(
 ) -> JSONResponse:
     query, params = build_purchase_ledger_query(name, category, sort, direction)
 
-    with sqlite3.connect(DB_PATH) as connection:
-        connection.row_factory = sqlite3.Row
-        rows = connection.execute(query, params).fetchall()
+    connection = None
+    try:
+        connection, _mode = open_purchase_connection(force_sync=False)
+        rows = cursor_to_dicts(connection.execute(query, tuple(params)))
+    except RuntimeError as error:
+        return JSONResponse({"message": str(error), "items": [], "count": 0}, status_code=500)
+    finally:
+        close_connection(connection)
 
     return JSONResponse(
         {
-            "items": [dict(row) for row in rows],
+            "items": rows,
             "count": len(rows),
         }
     )
@@ -916,11 +1426,20 @@ async def export_purchase_ledger(
 ) -> Response:
     query, params = build_purchase_ledger_query(name, category, sort, direction)
 
-    with sqlite3.connect(DB_PATH) as connection:
-        connection.row_factory = sqlite3.Row
-        rows = connection.execute(query, params).fetchall()
+    connection = None
+    try:
+        connection, _mode = open_purchase_connection(force_sync=True)
+        rows = cursor_to_dicts(connection.execute(query, tuple(params)))
+    except RuntimeError as error:
+        return Response(
+            content=str(error).encode("utf-8"),
+            media_type="text/plain; charset=utf-8",
+            status_code=500,
+        )
+    finally:
+        close_connection(connection)
 
-    buffer = build_purchase_ledger_workbook([dict(row) for row in rows])
+    buffer = build_purchase_ledger_workbook(rows)
 
     return Response(
         content=buffer.getvalue(),
@@ -941,8 +1460,18 @@ async def export_selected_purchase_ledger(selection: PurchaseLedgerExportSelecti
             status_code=400,
         )
 
-    with sqlite3.connect(DB_PATH) as connection:
+    connection = None
+    try:
+        connection, _mode = open_purchase_connection(force_sync=True)
         rows = fetch_purchase_entries_by_ids(connection, entry_ids)
+    except RuntimeError as error:
+        return Response(
+            content=str(error).encode("utf-8"),
+            media_type="text/plain; charset=utf-8",
+            status_code=500,
+        )
+    finally:
+        close_connection(connection)
 
     if not rows:
         return Response(
@@ -951,7 +1480,7 @@ async def export_selected_purchase_ledger(selection: PurchaseLedgerExportSelecti
             status_code=404,
         )
 
-    buffer = build_purchase_ledger_workbook([dict(row) for row in rows])
+    buffer = build_purchase_ledger_workbook(rows)
 
     return Response(
         content=buffer.getvalue(),
@@ -972,8 +1501,18 @@ async def export_selected_purchase_labels(selection: PurchaseLedgerExportSelecti
             status_code=400,
         )
 
-    with sqlite3.connect(DB_PATH) as connection:
+    connection = None
+    try:
+        connection, _mode = open_purchase_connection(force_sync=True)
         rows = fetch_purchase_entries_by_ids(connection, entry_ids)
+    except RuntimeError as error:
+        return Response(
+            content=str(error).encode("utf-8"),
+            media_type="text/plain; charset=utf-8",
+            status_code=500,
+        )
+    finally:
+        close_connection(connection)
 
     if not rows:
         return Response(
@@ -982,7 +1521,7 @@ async def export_selected_purchase_labels(selection: PurchaseLedgerExportSelecti
             status_code=404,
         )
 
-    buffer = build_purchase_workbook([dict(row) for row in rows])
+    buffer = build_purchase_workbook(rows)
 
     return Response(
         content=buffer.getvalue(),

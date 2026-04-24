@@ -43,6 +43,18 @@ if errorlevel 1 (
   exit /b 1
 )
 
+if exist ".env" (
+  copy /y ".env" "dist\PlantLabelHelper\.env" >nul
+  if errorlevel 1 (
+    echo Failed to copy .env to the dist folder.
+    pause
+    exit /b 1
+  )
+  echo .env was copied to dist\PlantLabelHelper\.env
+) else (
+  echo No .env file was found. Turso environment settings were not bundled.
+)
+
 echo.
 echo dist\PlantLabelHelper\PlantLabelHelper.exe was created.
 pause

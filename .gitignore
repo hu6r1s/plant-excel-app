@@ -7,3 +7,6 @@ dist/*
 venv/
 *.log
 data/*
+.env
+!.env.example
+backup/*

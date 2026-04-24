@@ -432,14 +432,17 @@ const savePurchaseLedger = async () => {
       throw new Error(result.message || "purchase ledger save failed");
     }
 
-    copyFeedback.textContent = `${result.message} 데이터 파일은 ${result.db_path} 입니다.`;
+    const storageLabel = result.storage_label || result.db_path || "";
+    copyFeedback.textContent = storageLabel
+      ? `${result.message} 저장 위치: ${storageLabel}`
+      : result.message;
   } catch (error) {
     console.error(error);
     copyFeedback.textContent = "매입 내역 저장에 실패했습니다.";
   } finally {
     saveLedgerButton.disabled = false;
     saveLedgerSpinner.classList.add("hidden");
-    saveLedgerLabel.textContent = "매입처 추가";
+    saveLedgerLabel.textContent = "매입장 추가";
   }
 };
 
